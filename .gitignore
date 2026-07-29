@@ -1,0 +1,26 @@
+# Python build and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# Local environments and generated distributions
+.venv/
+venv/
+dist/
+build/
+*.tar.gz
+
+# Runtime data: retain empty directory placeholders only.
+output/**
+!output/assets/
+!output/assets/.gitkeep
+!output/database/
+!output/database/.gitkeep
+!output/logs/
+!output/logs/.gitkeep
+reports/**
+!reports/.gitkeep

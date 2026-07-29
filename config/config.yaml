@@ -1,0 +1,12 @@
+threads: 50
+
+crawler:
+  depth: 5
+  javascript: true
+
+download:
+  timeout: 15
+  retries: 3
+
+database:
+  path: output/database/recon.db
