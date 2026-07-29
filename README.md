@@ -1,4 +1,4 @@
-# JSIntel Phase 1
+# JSIntel Phase 1 (The project is not complete and only posted as a skeleton )
 
 JSIntel is a JavaScript Asset Intelligence and Recon Framework for **authorized security testing and asset inventory**. It crawls a supplied scope, identifies client-side assets, downloads them with integrity metadata, extracts useful inventory signals, and produces SQLite-backed reports.
 
