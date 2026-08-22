@@ -14,6 +14,7 @@ JSIntel is a JavaScript Asset Intelligence and Recon Framework for **authorized 
 - URL normalization and type classification before parallel, resumable downloads.
 - SHA-256, byte size, MIME type, failure status, timeout, and retry handling.
 - Extraction of URLs, API/GraphQL-like paths, WebSocket URLs, imports/requires, and framework signatures.
+- Multi-language AST parsing (JavaScript, JSX, TypeScript, TSX) with graceful fallback.
 - SQLite database with assets, URLs, endpoints, technologies, and findings tables.
 - JSON, Markdown, and CSV reporting.
 
@@ -71,6 +72,7 @@ target_output/
     ├── websocket.json
     ├── imports.json
     ├── frameworks.json
+    ├── findings.json
     ├── assets.csv
     ├── summary.json
     └── summary.md

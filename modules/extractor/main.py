@@ -8,13 +8,16 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from .findings import ExtractionError
+from .findings import ExtractionError, SecurityFinding
 from .models import Asset
+from .parser import parse_js, parse_jsx, parse_tsx, parse_typescript
 from .registry import discover, select
 from .utils import read_asset
 from .writer import JSONWriter
 
 LOGGER = logging.getLogger(__name__)
+
+_SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 
 
 def iter_assets(manifest: Path) -> Iterator[Asset]:
@@ -88,7 +91,9 @@ def run(manifest: Path, output: Path) -> int:
         for analyzer in analyzers:
             analyzer.initialize()
         for asset in iter_assets(manifest):
-            if not asset.is_downloaded_javascript or asset.local_path is None:
+            if asset.local_path is None:
+                continue
+            if not select(analyzers, asset.asset_type):
                 continue
             try:
                 source = read_asset(asset.local_path)
@@ -96,14 +101,31 @@ def run(manifest: Path, output: Path) -> int:
                 writer.write_error(ExtractionError(asset.url, "reader", str(error)))
                 errors += 1
                 continue
+            tree = None
+            if asset.is_parseable_web_asset:
+                if asset.asset_type == "typescript":
+                    tree = parse_typescript(source)
+                elif asset.asset_type == "tsx":
+                    tree = parse_tsx(source)
+                elif asset.asset_type == "jsx":
+                    tree = parse_jsx(source)
+                else:
+                    tree = parse_js(source)
+            if tree is not None:
+                object.__setattr__(asset, "_tree", tree)
+            asset_findings: list[Finding] = []
             for analyzer in select(analyzers, asset.asset_type):
                 try:
-                    for finding in analyzer.analyze(asset, source):
-                        writer.write(finding)
+                    asset_findings.extend(analyzer.analyze(asset, source))
                 except Exception as error:  # A plugin must not abort the scan.
                     LOGGER.exception("Analyzer %s failed for %s", analyzer.id, asset.url)
                     writer.write_error(ExtractionError(asset.url, analyzer.id, str(error)))
                     errors += 1
+            security = [f for f in asset_findings if isinstance(f, SecurityFinding)]
+            other = [f for f in asset_findings if not isinstance(f, SecurityFinding)]
+            security.sort(key=lambda f: _SEVERITY_ORDER.get(f.severity, 99))
+            for finding in other + security:
+                writer.write(finding)
         for analyzer in analyzers:
             for finding in analyzer.finalize():
                 writer.write(finding)

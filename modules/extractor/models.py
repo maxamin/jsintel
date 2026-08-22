@@ -14,6 +14,7 @@ class Asset:
     asset_type: str
     local_path: Path | None
     status: str
+    _tree: Any | None = None
 
     @classmethod
     def from_manifest(cls, value: Mapping[str, Any]) -> "Asset":
@@ -28,3 +29,7 @@ class Asset:
     @property
     def is_downloaded_javascript(self) -> bool:
         return self.asset_type == "javascript" and self.status == "downloaded"
+
+    @property
+    def is_parseable_web_asset(self) -> bool:
+        return self.asset_type in ("javascript", "jsx", "typescript", "tsx") and self.status == "downloaded"

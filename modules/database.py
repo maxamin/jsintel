@@ -30,6 +30,13 @@ def ingest(output: Path, config: Path) -> None:
     for r in records(output/'reports/frameworks.json'):
         aid=ids.get(r.get('asset_url'))
         if aid: cur.execute('INSERT OR IGNORE INTO technologies(asset_id,name,evidence) VALUES(?,?,?)',(aid,r['technology'],r.get('evidence')))
+    for r in records(output/'reports/findings.json'):
+        aid=ids.get(r.get('asset_url'))
+        if aid:
+            cur.execute(
+                'INSERT INTO findings(asset_id,finding_type,severity,value) VALUES(?,?,?,?)',
+                (aid, r['finding_type'], r['severity'], r['value']),
+            )
     con.commit(); con.close()
 def query(output: Path, config: Path, sql: str) -> None:
     con=connect(output,config)

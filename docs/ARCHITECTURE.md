@@ -30,7 +30,10 @@ only invokes `python3 -m modules.extractor.main`; extraction implementation is
 in a typed Python package. `JSONWriter` streams the legacy `urls.json`,
 `endpoints.json`, `websocket.json`, `imports.json`, and `frameworks.json`
 arrays directly to temporary files, then atomically publishes each report.
-`errors.json` records isolated reader/plugin failures.
+The parser layer supports JavaScript, JSX, TypeScript, and TSX grammars
+with per-language graceful degradation when a grammar is unavailable.
+`findings.json` streams security and code-intelligence findings produced by
+AST-based analyzers. `errors.json` records isolated reader/plugin failures.
 
 ## Plugin lifecycle
 

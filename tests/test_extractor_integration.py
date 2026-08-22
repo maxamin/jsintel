@@ -54,3 +54,46 @@ def test_extractor_records_missing_asset_as_recoverable_error(tmp_path: Path) ->
     assert run(manifest, tmp_path / "reports") == 1
     errors = json.loads((tmp_path / "reports" / "errors.json").read_text())
     assert errors[0]["analyzer"] == "reader"
+
+
+def test_extractor_processes_typescript_and_tsx_assets(tmp_path: Path) -> None:
+    ts_source = tmp_path / "app.ts"
+    ts_source.write_text(
+        'import axios from "axios";\nconst path: string = "/api/v1/users";\nfetch(path);\n',
+        encoding="utf-8",
+    )
+    tsx_source = tmp_path / "app.tsx"
+    tsx_source.write_text(
+        'import React from "react";\nconst el = <div>hello</div>;\n',
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "assets.json"
+    manifest.write_text(
+        json.dumps(
+            [
+                {
+                    "url": "https://app.example.test/app.ts",
+                    "type": "typescript",
+                    "status": "downloaded",
+                    "local_path": str(ts_source),
+                },
+                {
+                    "url": "https://app.example.test/app.tsx",
+                    "type": "tsx",
+                    "status": "downloaded",
+                    "local_path": str(tsx_source),
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert run(manifest, tmp_path / "reports") == 0
+    reports = tmp_path / "reports"
+    endpoints = json.loads((reports / "endpoints.json").read_text())
+    assert any(item["endpoint"] == "/api/v1/users" for item in endpoints)
+    imports = json.loads((reports / "imports.json").read_text())
+    modules = {item["module"] for item in imports}
+    assert "axios" in modules
+    assert "react" in modules
+    assert json.loads((reports / "errors.json").read_text()) == []

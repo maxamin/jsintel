@@ -64,6 +64,26 @@ class FrameworkFinding(Finding):
 
 
 @dataclass(frozen=True, slots=True)
+class SecurityFinding(Finding):
+    finding_type: str
+    severity: str
+    value: str
+    source: str = ""
+    sink: str = ""
+    report: str = field(init=False, default="findings")
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "asset_url": self.asset_url,
+            "finding_type": self.finding_type,
+            "severity": self.severity,
+            "value": self.value,
+            "source": self.source,
+            "sink": self.sink,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ExtractionError:
     asset_url: str
     analyzer: str
