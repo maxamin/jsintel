@@ -41,3 +41,15 @@ CREATE TABLE IF NOT EXISTS findings (
   value TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS fuzz_results (
+  id INTEGER PRIMARY KEY,
+  url TEXT NOT NULL UNIQUE,
+  category TEXT NOT NULL,
+  origin TEXT,
+  word TEXT,
+  status INTEGER,
+  length INTEGER,
+  interesting INTEGER NOT NULL DEFAULT 0,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

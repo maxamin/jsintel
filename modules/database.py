@@ -37,6 +37,18 @@ def ingest(output: Path, config: Path) -> None:
                 'INSERT INTO findings(asset_id,finding_type,severity,value) VALUES(?,?,?,?)',
                 (aid, r['finding_type'], r['severity'], r['value']),
             )
+    # Fuzz results are keyed by target URL and independent of the asset table;
+    # only actually-probed rows are stored (planning/skipped rows are omitted).
+    for r in records(output/'reports/fuzz.json'):
+        if r.get('note') in ('dry-run', 'out-of-scope'):
+            continue
+        cur.execute(
+            '''INSERT INTO fuzz_results(url,category,origin,word,status,length,interesting,note)
+               VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(url) DO UPDATE SET
+               status=excluded.status,length=excluded.length,interesting=excluded.interesting,note=excluded.note''',
+            (r['url'], r.get('category',''), r.get('origin'), r.get('word'),
+             r.get('status'), r.get('length'), 1 if r.get('interesting') else 0, r.get('note')),
+        )
     con.commit(); con.close()
 def query(output: Path, config: Path, sql: str) -> None:
     con=connect(output,config)

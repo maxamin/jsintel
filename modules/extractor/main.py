@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from .findings import ExtractionError, SecurityFinding
+from .findings import ExtractionError, Finding, SecurityFinding
 from .models import Asset
 from .parser import parse_js, parse_jsx, parse_tsx, parse_typescript
 from .registry import discover, select

@@ -17,6 +17,9 @@ JSIntel is a JavaScript Asset Intelligence and Recon Framework for **authorized 
 - Multi-language AST parsing (JavaScript, JSX, TypeScript, TSX) with graceful fallback.
 - SQLite database with assets, URLs, endpoints, technologies, and findings tables.
 - JSON, Markdown, and CSV reporting.
+- Opt-in, category-aware content-discovery fuzzing that extends discovered paths
+  with the matching [Assetnote wordlist](https://wordlists.assetnote.io/) and
+  verifies them against an authorized scope. See [Fuzzing](docs/FUZZING.md).
 
 ## Extraction engine
 
@@ -54,6 +57,17 @@ Run the pipeline:
 
 `-o` defaults to `./output`; `-t` defaults to `config/config.yaml` (50). A single `http(s)` URL can be passed to `-i` as well. Never run this tool outside a scope you are authorized to assess.
 
+To also fuzz the discovered paths against category-appropriate Assetnote
+wordlists, add `-f` with an **authorized** scope:
+
+```bash
+./jsintel.sh -i crawled_urls -o target_output -f app.example.test
+```
+
+Fuzzing sends live HTTP requests and runs only against the scope you pass; it is
+off unless `-f` is given. See [Fuzzing](docs/FUZZING.md) for the category→wordlist
+mapping, the high-hit-rate strategy, the safety model, and standalone usage.
+
 ## Output
 
 For an output directory named `target_output`, JSIntel writes:
@@ -73,6 +87,8 @@ target_output/
     ├── imports.json
     ├── frameworks.json
     ├── findings.json
+    ├── fuzz.json            # only when fuzzing is enabled (-f)
+    ├── fuzz_summary.json    # only when fuzzing is enabled (-f)
     ├── assets.csv
     ├── summary.json
     └── summary.md
@@ -90,7 +106,7 @@ python3 modules/database.py --output target_output query 'SELECT endpoint FROM e
 jsintel-phase1/
 ├── jsintel.sh                 # Pipeline launcher
 ├── install.sh                 # Debian/Kali dependency installation
-├── modules/                   # Crawl, classify, download, extract, database, report modules
+├── modules/                   # Crawl, classify, download, extract, fuzz, database, report modules
 ├── database/schema.sql        # SQLite schema
 ├── config/config.yaml         # Runtime defaults
 ├── reports/                   # Placeholder for checked-in report exports

@@ -1,0 +1,18 @@
+# GraphQL discovery seed (assetnote manual/graphql.txt is used when online)
+graphql
+graphiql
+graphql/console
+graphql/schema
+graphql/schema.json
+graphql-explorer
+graphql/v1
+graphql/v2
+api/graphql
+v1/graphql
+v2/graphql
+gql
+query
+subscriptions
+playground
+altair
+voyager
