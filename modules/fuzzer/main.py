@@ -50,6 +50,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--filter-status", default="", help="Override filtered HTTP status codes.")
     parser.add_argument("--follow-redirects", action="store_true", help="Follow 3xx instead of recording them.")
     parser.add_argument("--no-calibrate", action="store_true", help="Disable per-directory soft-404 calibration.")
+    parser.add_argument("--no-local", action="store_true", help="Do not use locally installed SecLists wordlists.")
+    parser.add_argument("--seclists", default="", help="Path to a SecLists install (root or Web-Content dir).")
     parser.add_argument("--user-agent", default=FuzzConfig().user_agent, help="Request User-Agent header.")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging.")
     return parser
@@ -93,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run,
         offline=args.offline,
         calibrate=not args.no_calibrate,
+        use_local=not args.no_local,
+        seclists_dir=args.seclists,
         user_agent=args.user_agent,
     )
 

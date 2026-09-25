@@ -65,8 +65,11 @@ wordlists, add `-f` with an **authorized** scope:
 ```
 
 Fuzzing sends live HTTP requests and runs only against the scope you pass; it is
-off unless `-f` is given. See [Fuzzing](docs/FUZZING.md) for the category→wordlist
-mapping, the high-hit-rate strategy, the safety model, and standalone usage.
+off unless `-f` is given. When [SecLists](https://github.com/danielmiessler/SecLists)
+is installed (e.g. `/usr/share/seclists` on Kali) the fuzzer uses it automatically,
+preferring it over network downloads. See [Fuzzing](docs/FUZZING.md) for the
+category→wordlist mapping, the high-hit-rate strategy, the safety model, and
+standalone usage.
 
 ## Output
 

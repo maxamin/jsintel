@@ -56,9 +56,13 @@ markers, and a JavaScript extension wins over an `/api` prefix (a bundle under
 
 For each category the provider resolves words in this order:
 
-1. a previously cached download under `<output>/wordlists/`,
-2. a fresh download from the Assetnote CDN (unless `--offline`), cached for reuse,
-3. the **bundled seed** that ships with JSIntel.
+1. a previously cached/override file under `<output>/wordlists/` (named
+   `<list>.txt`, e.g. `assetnote-raft-directories.txt`) — drop any list here to
+   force it for a category;
+2. a **locally installed SecLists** file, when SecLists is present (used even
+   with `--offline`, since it is on disk, not remote);
+3. a fresh download from the Assetnote CDN (unless `--offline`), cached for reuse;
+4. the **bundled seed** that ships with JSIntel.
 
 The result is always non-empty, so the fuzzer works with no network at all. Only
 the top `--max-words` entries per category are used (default 1500); because the
@@ -66,6 +70,31 @@ lists are frequency-ranked, that slice keeps request volume bounded while
 retaining the highest-probability terms. Assetnote's dated `automated/` filenames
 rotate over time — if a listed snapshot 404s, the next candidate URL and finally
 the seed are used, so a stale filename degrades gracefully instead of failing.
+
+The provenance actually used for each category is logged (`Using local wordlist
+… for api`) and available programmatically as `WordlistProvider.sources`.
+
+### Using locally installed SecLists
+
+On Kali/Debian pentest images SecLists lives at `/usr/share/seclists`. When it is
+present the fuzzer prefers it automatically. Each category maps to a curated
+SecLists file:
+
+| Category   | SecLists file (under `Discovery/Web-Content/`)          |
+|------------|---------------------------------------------------------|
+| `api`      | `api/api-seen-in-wild.txt` → `api/api-endpoints.txt`     |
+| `graphql`  | `graphql.txt`                                           |
+| `js`/`file`| `raft-large-files.txt`                                  |
+| `parameter`| `burp-parameter-names.txt`                              |
+| `directory`| `raft-large-directories.txt`                            |
+| `generic`  | `raft-large-words.txt` → `common.txt`                   |
+
+Options: `--seclists <dir>` points at a non-standard SecLists install (its root
+or its `Discovery/Web-Content` directory); `--no-local` disables the local source
+and uses the CDN/seed path instead. To use a **different** local collection
+(ProjectDiscovery, OneListForAll, a custom list), copy the file into
+`<output>/wordlists/<list>.txt` for the category you want to override — step 1
+above picks it up before anything else.
 
 ## Usage
 
@@ -117,6 +146,8 @@ Key options:
 | `--match-status`    | Override matched status codes.                                 |
 | `--filter-status`   | Override filtered status codes.                                |
 | `--no-calibrate`    | Disable per-directory soft-404 calibration.                    |
+| `--seclists DIR`    | Path to a SecLists install (root or `Discovery/Web-Content`).  |
+| `--no-local`        | Ignore locally installed SecLists; use CDN/seed instead.       |
 
 ## Output
 
@@ -179,7 +210,8 @@ feature is tested offline with no network:
 |----------------------------|-----------------------------------------------------|
 | `classify.py`              | discovered path → category                          |
 | `catalog.py`               | category → Assetnote `WordlistSpec`                 |
-| `wordlists.py`             | resolve/cache words (cache → download → seed)       |
+| `local.py`                 | category → installed SecLists file                  |
+| `wordlists.py`             | resolve words (cache → local → download → seed)     |
 | `scope.py`                 | authorization allowlist / gate                      |
 | `candidates.py`            | prefix extension → candidate URLs                   |
 | `transport.py`             | HTTP boundary (stdlib; a fake is injected in tests) |

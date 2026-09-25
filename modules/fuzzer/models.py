@@ -130,6 +130,8 @@ class FuzzConfig:
     offline: bool = False
     max_candidates: int = 20000
     calibrate: bool = True
+    use_local: bool = True
+    seclists_dir: str = ""
 
     def __post_init__(self) -> None:
         if self.concurrency < 1:

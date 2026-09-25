@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .catalog import spec_for
+from .local import LocalWordlistSource
 from .models import Category, WordlistSpec
 
 LOGGER = logging.getLogger(__name__)
@@ -67,12 +68,16 @@ class WordlistProvider:
         fetcher: Fetcher | None = None,
         offline: bool = False,
         seed_dir: Path = SEED_DIR,
+        local: LocalWordlistSource | None = None,
     ) -> None:
         self._cache_dir = cache_dir
         self._fetcher = fetcher
         self._offline = offline
         self._seed_dir = seed_dir
+        self._local = local
         self._memo: dict[Category, list[str]] = {}
+        #: Provenance per category, e.g. "local:/usr/share/seclists/...", "seed".
+        self.sources: dict[Category, str] = {}
 
     def words_for(self, category: Category, limit: int) -> list[str]:
         """Return up to ``limit`` cleaned words for a category."""
@@ -87,7 +92,16 @@ class WordlistProvider:
     def _load_text(self, spec: WordlistSpec) -> str:
         cached = self._cache_dir / f"{spec.name}.txt"
         if cached.is_file():
+            self.sources[spec.category] = f"cache:{cached}"
             return cached.read_text(encoding="utf-8", errors="ignore")
+        # Installed SecLists/local wordlists are preferred over the network and
+        # are used even in offline mode -- they are on disk, not remote.
+        if self._local is not None:
+            local_path = self._local.resolve(spec.category)
+            if local_path is not None:
+                LOGGER.info("Using local wordlist %s for %s", local_path, spec.category.value)
+                self.sources[spec.category] = f"local:{local_path}"
+                return local_path.read_text(encoding="utf-8", errors="ignore")
         if not self._offline and self._fetcher is not None:
             text = self._download(spec)
             if text is not None:
@@ -96,7 +110,9 @@ class WordlistProvider:
                     cached.write_text(text, encoding="utf-8")
                 except OSError as error:  # Caching is best-effort.
                     LOGGER.debug("Could not cache %s: %s", cached, error)
+                self.sources[spec.category] = "download"
                 return text
+        self.sources[spec.category] = "seed"
         return self._seed_text(spec)
 
     def _download(self, spec: WordlistSpec) -> str | None:

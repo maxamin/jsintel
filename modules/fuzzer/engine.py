@@ -131,12 +131,21 @@ def run(
     """Execute a full fuzzing run and persist ``fuzz.json``."""
     reports_dir = output_dir / "reports"
     if provider is None:
+        from .local import LocalWordlistSource
         from .wordlists import urllib_fetcher
 
+        local = None
+        if config.use_local:
+            local = LocalWordlistSource.autodetect(
+                Path(config.seclists_dir) if config.seclists_dir else None
+            )
+            if local is not None:
+                LOGGER.info("Local wordlists detected (SecLists); preferring them over downloads")
         provider = WordlistProvider(
             cache_dir=output_dir / "wordlists",
             fetcher=urllib_fetcher(timeout=config.timeout, user_agent=config.user_agent),
             offline=config.offline,
+            local=local,
         )
     if transport is None:
         transport = UrllibTransport()
