@@ -1,0 +1,17 @@
+http://dvwa.vuln.lab:3000/
+http://dvwa.vuln.lab:80/
+http://dvwa.vuln.lab:8081/
+http://dvwa.vuln.lab:8081/login.php
+http://dvwa.vuln.lab:8082/
+http://dvwa.vuln.lab:9090/
+http://goat.vuln.lab:3000/
+http://goat.vuln.lab:80/
+http://goat.vuln.lab:8081/
+http://goat.vuln.lab:8082/
+http://goat.vuln.lab:8082/WebGoat/login
+http://goat.vuln.lab:9090/
+http://shop.vuln.lab:3000/
+http://shop.vuln.lab:80/
+http://shop.vuln.lab:8081/
+http://shop.vuln.lab:8082/
+http://shop.vuln.lab:9090/

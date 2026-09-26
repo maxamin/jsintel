@@ -1,0 +1,14 @@
+{
+    "permissions": {
+      "allow": [
+        "Bash(./jsintel.sh:*)",
+        "Bash(katana:*)",
+        "Bash(ffuf:*)",
+        "Bash(feroxbuster:*)",
+        "Bash(amass:*)",
+        "Bash(httpx:*)",
+        "Bash(assetfinder:*)",
+        "Bash(hakrawler:*)"
+      ]
+    }
+  }

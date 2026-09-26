@@ -1,0 +1,7 @@
+http://api.vuln.lab:5001/
+http://dvwa.vuln.lab:8081/
+http://goat.vuln.lab:8082/
+http://goat.vuln.lab:9090/
+http://graphql.vuln.lab:5013/
+http://shop.vuln.lab:3000/
+http://shop.vuln.lab:80/

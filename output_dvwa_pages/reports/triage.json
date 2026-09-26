@@ -1,0 +1,23 @@
+[
+  {
+    "host": "dvwa.vuln.lab",
+    "risk_score": 12,
+    "max_severity": "none",
+    "score_breakdown": {
+      "findings": 0,
+      "endpoints": 12,
+      "exposure": 0
+    },
+    "findings_by_severity": {},
+    "finding_count": 0,
+    "top_findings": [],
+    "service_count": 0,
+    "services": [],
+    "endpoint_count": 3,
+    "sensitive_endpoints": [
+      "dvwa/css/login.css",
+      "dvwa/images/login_logo.png",
+      "login.php"
+    ]
+  }
+]

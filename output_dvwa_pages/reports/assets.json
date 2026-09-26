@@ -1,0 +1,11 @@
+[
+  {
+    "url": "http://dvwa.vuln.lab:8081/login.php",
+    "type": "page",
+    "local_path": "/root/jsintel/output_dvwa_pages/assets/000000_login.php",
+    "sha256": "02983d826f627677a348626b6b6187f32d59944a36e26e9868e62c679068fc28",
+    "size_bytes": 1342,
+    "mime_type": "text/html",
+    "status": "downloaded"
+  }
+]

@@ -1,0 +1,378 @@
+[
+  {
+    "host": "shop.vuln.lab",
+    "risk_score": 1253,
+    "max_severity": "critical",
+    "score_breakdown": {
+      "findings": 1204,
+      "endpoints": 40,
+      "exposure": 9
+    },
+    "findings_by_severity": {
+      "critical": 4,
+      "high": 4,
+      "medium": 62,
+      "low": 8
+    },
+    "finding_count": 78,
+    "top_findings": [
+      {
+        "type": "dangerous_eval",
+        "severity": "critical",
+        "value": "Func...3286 (len 21)"
+      },
+      {
+        "type": "dangerous_eval",
+        "severity": "critical",
+        "value": "Func...6552 (len 21)"
+      },
+      {
+        "type": "dangerous_eval",
+        "severity": "critical",
+        "value": "eval...ne 2 (len 14)"
+      },
+      {
+        "type": "taint_to_sink",
+        "severity": "critical",
+        "value": "loca...ne 2 (len 29)"
+      },
+      {
+        "type": "hardcoded_secret",
+        "severity": "high",
+        "value": "aws-...ureL (len 34)"
+      },
+      {
+        "type": "hardcoded_secret",
+        "severity": "high",
+        "value": "goog....com (len 35)"
+      },
+      {
+        "type": "taint_to_sink",
+        "severity": "high",
+        "value": "loca...1068 (len 46)"
+      },
+      {
+        "type": "taint_to_sink",
+        "severity": "high",
+        "value": "loca...1069 (len 46)"
+      },
+      {
+        "type": "prototype_pollution",
+        "severity": "medium",
+        "value": "dyna...ne 1 (len 35)"
+      },
+      {
+        "type": "prototype_pollution",
+        "severity": "medium",
+        "value": "dyna...ne 1 (len 35)"
+      }
+    ],
+    "service_count": 2,
+    "services": [
+      {
+        "url": "http://shop.vuln.lab:80/",
+        "port": 80,
+        "scheme": "http",
+        "status": 200,
+        "server": "SimpleHTTP/0.6 Python/3.14.7",
+        "title": "",
+        "screenshot": null,
+        "cluster": null,
+        "nonstandard_port": false
+      },
+      {
+        "url": "http://shop.vuln.lab:3000/",
+        "port": 3000,
+        "scheme": "http",
+        "status": 200,
+        "server": "",
+        "title": "OWASP Juice Shop",
+        "screenshot": null,
+        "cluster": null,
+        "nonstandard_port": true
+      }
+    ],
+    "endpoint_count": 59,
+    "sensitive_endpoints": [
+      "/api/Challenges/?key=nftMintChallenge",
+      "/api/Users",
+      "/api/v1/users",
+      "/api/v2/register",
+      "/rest/2fa/disable",
+      "/rest/2fa/setup",
+      "/rest/2fa/status",
+      "/rest/2fa/verify",
+      "/rest/admin",
+      "/rest/admin/application-configuration",
+      "/rest/saveLoginIp",
+      "/rest/user/authentication-details/",
+      "/rest/user/change-password?current=",
+      "/rest/user/login",
+      "/rest/user/reset-password"
+    ]
+  },
+  {
+    "host": "graphql.vuln.lab",
+    "risk_score": 106,
+    "max_severity": "high",
+    "score_breakdown": {
+      "findings": 99,
+      "endpoints": 0,
+      "exposure": 7
+    },
+    "findings_by_severity": {
+      "high": 1,
+      "medium": 5,
+      "low": 3
+    },
+    "finding_count": 9,
+    "top_findings": [
+      {
+        "type": "graphql_introspection_enabled",
+        "severity": "high",
+        "value": "Grap...sed) (len 95)"
+      },
+      {
+        "type": "prototype_pollution",
+        "severity": "medium",
+        "value": "dyna...ne 6 (len 35)"
+      },
+      {
+        "type": "prototype_pollution",
+        "severity": "medium",
+        "value": "dyna...ne 1 (len 35)"
+      },
+      {
+        "type": "prototype_pollution",
+        "severity": "medium",
+        "value": "dyna...ne 2 (len 35)"
+      },
+      {
+        "type": "missing_security_header",
+        "severity": "medium",
+        "value": "No C...ader (len 33)"
+      },
+      {
+        "type": "insecure_cookie",
+        "severity": "medium",
+        "value": "Cook...Only (len 29)"
+      },
+      {
+        "type": "missing_security_header",
+        "severity": "low",
+        "value": "No X...niff (len 34)"
+      },
+      {
+        "type": "clickjacking",
+        "severity": "low",
+        "value": "No X...tors (len 45)"
+      },
+      {
+        "type": "insecure_cookie",
+        "severity": "low",
+        "value": "Cook...Site (len 29)"
+      }
+    ],
+    "service_count": 1,
+    "services": [
+      {
+        "url": "http://graphql.vuln.lab:5013/",
+        "port": 5013,
+        "scheme": "http",
+        "status": 200,
+        "server": "",
+        "title": "Damn Vulnerable GraphQL Application",
+        "screenshot": null,
+        "cluster": null,
+        "nonstandard_port": true
+      }
+    ],
+    "endpoint_count": 0,
+    "sensitive_endpoints": []
+  },
+  {
+    "host": "goat.vuln.lab",
+    "risk_score": 42,
+    "max_severity": "medium",
+    "score_breakdown": {
+      "findings": 32,
+      "endpoints": 0,
+      "exposure": 10
+    },
+    "findings_by_severity": {
+      "medium": 2,
+      "low": 4
+    },
+    "finding_count": 6,
+    "top_findings": [
+      {
+        "type": "missing_security_header",
+        "severity": "medium",
+        "value": "No C...ader (len 33)"
+      },
+      {
+        "type": "missing_security_header",
+        "severity": "medium",
+        "value": "No C...ader (len 33)"
+      },
+      {
+        "type": "missing_security_header",
+        "severity": "low",
+        "value": "No X...niff (len 34)"
+      },
+      {
+        "type": "clickjacking",
+        "severity": "low",
+        "value": "No X...tors (len 45)"
+      },
+      {
+        "type": "missing_security_header",
+        "severity": "low",
+        "value": "No X...niff (len 34)"
+      },
+      {
+        "type": "clickjacking",
+        "severity": "low",
+        "value": "No X...tors (len 45)"
+      }
+    ],
+    "service_count": 2,
+    "services": [
+      {
+        "url": "http://goat.vuln.lab:8082/",
+        "port": 8082,
+        "scheme": "http",
+        "status": 404,
+        "server": "",
+        "title": "",
+        "screenshot": null,
+        "cluster": null,
+        "nonstandard_port": true
+      },
+      {
+        "url": "http://goat.vuln.lab:9090/",
+        "port": 9090,
+        "scheme": "http",
+        "status": 404,
+        "server": "",
+        "title": "",
+        "screenshot": null,
+        "cluster": null,
+        "nonstandard_port": true
+      }
+    ],
+    "endpoint_count": 0,
+    "sensitive_endpoints": []
+  },
+  {
+    "host": "dvwa.vuln.lab",
+    "risk_score": 29,
+    "max_severity": "medium",
+    "score_breakdown": {
+      "findings": 22,
+      "endpoints": 0,
+      "exposure": 7
+    },
+    "findings_by_severity": {
+      "medium": 1,
+      "low": 4
+    },
+    "finding_count": 5,
+    "top_findings": [
+      {
+        "type": "missing_security_header",
+        "severity": "medium",
+        "value": "No C...ader (len 33)"
+      },
+      {
+        "type": "missing_security_header",
+        "severity": "low",
+        "value": "No X...niff (len 34)"
+      },
+      {
+        "type": "clickjacking",
+        "severity": "low",
+        "value": "No X...tors (len 45)"
+      },
+      {
+        "type": "information_disclosure",
+        "severity": "low",
+        "value": "X-Po...4.26 (len 24)"
+      },
+      {
+        "type": "insecure_cookie",
+        "severity": "low",
+        "value": "Cook...Site (len 34)"
+      }
+    ],
+    "service_count": 1,
+    "services": [
+      {
+        "url": "http://dvwa.vuln.lab:8081/",
+        "port": 8081,
+        "scheme": "http",
+        "status": 200,
+        "server": "",
+        "title": "Login :: Damn Vulnerable Web Application (DVWA)",
+        "screenshot": null,
+        "cluster": null,
+        "nonstandard_port": true
+      }
+    ],
+    "endpoint_count": 0,
+    "sensitive_endpoints": []
+  },
+  {
+    "host": "api.vuln.lab",
+    "risk_score": 26,
+    "max_severity": "medium",
+    "score_breakdown": {
+      "findings": 19,
+      "endpoints": 0,
+      "exposure": 7
+    },
+    "findings_by_severity": {
+      "medium": 1,
+      "low": 3
+    },
+    "finding_count": 4,
+    "top_findings": [
+      {
+        "type": "missing_security_header",
+        "severity": "medium",
+        "value": "No C...ader (len 33)"
+      },
+      {
+        "type": "missing_security_header",
+        "severity": "low",
+        "value": "No X...niff (len 34)"
+      },
+      {
+        "type": "clickjacking",
+        "severity": "low",
+        "value": "No X...tors (len 45)"
+      },
+      {
+        "type": "information_disclosure",
+        "severity": "low",
+        "value": "Serv...1.15 (len 44)"
+      }
+    ],
+    "service_count": 1,
+    "services": [
+      {
+        "url": "http://api.vuln.lab:5001/",
+        "port": 5001,
+        "scheme": "http",
+        "status": 200,
+        "server": "Werkzeug/2.2.3 Python/3.11.15",
+        "title": "",
+        "screenshot": null,
+        "cluster": null,
+        "nonstandard_port": true
+      }
+    ],
+    "endpoint_count": 0,
+    "sensitive_endpoints": []
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "total_assets": 0,
+  "javascript_count": 0,
+  "endpoint_count": 0,
+  "technology_count": 0,
+  "finding_count": 0,
+  "security_finding_count": 0,
+  "findings_by_severity": {},
+  "fuzz_probed": 0,
+  "fuzz_interesting": 0,
+  "web_services": 0,
+  "web_services_nonstandard_port": 0,
+  "screenshots": 0,
+  "screenshot_clusters": 0,
+  "file_statistics": {}
+}

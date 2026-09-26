@@ -25,6 +25,10 @@ dev = ["mypy>=1.8", "pytest>=8.0", "ruff>=0.3"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# The vulnerable-target lab clones upstream apps into tests/lab/runtime/, several
+# of which ship their own pytest suites. Never collect those (or venvs / node
+# modules) as JSIntel tests -- they require the app running and are not ours.
+norecursedirs = ["runtime", ".venv", "venv", "node_modules"]
 
 [tool.ruff]
 target-version = "py310"

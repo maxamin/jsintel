@@ -1,0 +1,70 @@
+2026-09-26T15:22:17Z [INFO] JSIntel Phase 1 started (workers: 20)
+2026-09-26T15:22:17Z [INFO] Pipeline: Crawler -> Normalizer -> Classifier -> Downloader -> Extractor -> Database -> Reports
+2026-09-26T15:22:17Z [INFO] Crawl scope anchored to authorized scope: dvwa.vuln.lab goat.vuln.lab shop.vuln.lab
+2026-09-26T15:22:17Z [INFO] Port scan: 3 in-scope host(s) for web-service discovery
+INFO Port scan (nmap): 15 open port(s) across 3 host(s)
+INFO Discovered 15 web service(s) (12 on non-standard ports) across 3 host(s) [scanner: nmap].
+2026-09-26T15:22:18Z [INFO] Port scan complete: 15 web service(s) -> /root/jsintel/output_lab_run/assets/services.txt
+2026-09-26T15:22:18Z [INFO] Crawling 17 combined seeds (input + subdomains + services)
+2026-09-26T15:22:19Z [INFO] Seed http://dvwa.vuln.lab:8081/ resolved to http://dvwa.vuln.lab:8081/login.php
+2026-09-26T15:22:19Z [INFO] Seed http://goat.vuln.lab:8081/ resolved to http://goat.vuln.lab:8081/login.php
+2026-09-26T15:22:20Z [INFO] Seed http://shop.vuln.lab:8081/ resolved to http://shop.vuln.lab:8081/login.php
+2026-09-26T15:22:20Z [INFO] Crawl scope (registered domains): dvwa.vuln.lab goat.vuln.lab shop.vuln.lab
+2026-09-26T15:22:20Z [INFO] Crawling with katana (depth 5)
+2026-09-26T15:22:20Z [INFO] Verbose crawl of: http://dvwa.vuln.lab:3000/ http://dvwa.vuln.lab:80/ http://dvwa.vuln.lab:8081/login.php http://dvwa.vuln.lab:8082/ http://dvwa.vuln.lab:9090/ http://goat.vuln.lab:3000/ http://goat.vuln.lab:80/ http://goat.vuln.lab:8081/login.php http://goat.vuln.lab:8082/ http://goat.vuln.lab:8082/WebGoat/login http://goat.vuln.lab:9090/ http://shop.vuln.lab:3000/ http://shop.vuln.lab:80/ http://shop.vuln.lab:8081/login.php http://shop.vuln.lab:8082/ http://shop.vuln.lab:9090/
+2026-09-26T15:22:50Z [INFO] Crawler saw 48 total URLs before asset filtering
+  crawled: http://shop.vuln.lab:9090/
+  crawled: http://shop.vuln.lab:80/
+  crawled: http://goat.vuln.lab:8081/login.php
+  crawled: http://dvwa.vuln.lab:8081/login.php
+  crawled: http://shop.vuln.lab:3000/
+  crawled: http://goat.vuln.lab:8082/WebGoat/login
+  crawled: http://shop.vuln.lab:80/static/config.json
+  crawled: http://shop.vuln.lab:80/static/service-worker.js
+  crawled: http://dvwa.vuln.lab:8081/dvwa/css/login.css
+  crawled: http://shop.vuln.lab:80/static/pm.js
+  crawled: http://shop.vuln.lab:80/static/sw.js
+  crawled: http://shop.vuln.lab:80/static/module.wasm
+  crawled: http://shop.vuln.lab:3000/scripts.js
+  crawled: http://shop.vuln.lab:80/static/framework.js
+  crawled: http://shop.vuln.lab:80/static/ws.js
+  crawled: http://shop.vuln.lab:3000/polyfills.js
+  crawled: http://shop.vuln.lab:80/api/health.json
+  crawled: http://shop.vuln.lab:80/manifest.webmanifest
+  crawled: http://goat.vuln.lab:8082/WebGoat/css/main.css
+  crawled: http://shop.vuln.lab:3000/styles.css
+  crawled: http://goat.vuln.lab:8082/WebGoat/css/font-awesome.min.css
+  crawled: http://goat.vuln.lab:8082/WebGoat/plugins/bootstrap/css/bootstrap.min.css
+  crawled: http://goat.vuln.lab:8082/WebGoat/css/animate.css
+  crawled: http://shop.vuln.lab:80/api/v2/register
+  crawled: http://shop.vuln.lab:80/static/endpoints.js
+  crawled: http://shop.vuln.lab:80/static/mod.mjs
+  crawled: http://shop.vuln.lab:80/static/app.js
+  crawled: http://shop.vuln.lab:80/static/dom.js
+  crawled: http://goat.vuln.lab:8082/WebGoat/registration
+  crawled: http://shop.vuln.lab:3000/main.js
+  crawled: http://shop.vuln.lab:8081/login.php
+  crawled: http://shop.vuln.lab:3000/redirect?to=https
+  crawled: http://shop.vuln.lab:3000/chunk-DBPdFzgj.js
+  crawled: http://shop.vuln.lab:3000/recycle.component-BMXcwerA.js
+  crawled: http://shop.vuln.lab:3000/wallet-web3.module-s802s5aS.js
+  crawled: http://shop.vuln.lab:3000/about.component-CZcG2819.js
+  crawled: http://shop.vuln.lab:3000/web3-sandbox.module-C8MIIA8b.js
+  crawled: http://shop.vuln.lab:3000/faucet.module-60SLa5Cr.js
+  crawled: http://shop.vuln.lab:3000/redirect?to=http
+  crawled: http://shop.vuln.lab:3000/hacking-instructor-BXwB7EFQ.js
+  crawled: http://shop.vuln.lab:3000/confetti-DoPrSMNP.js
+  crawled: http://shop.vuln.lab:3000/rolldown-runtime-BoHGiXSq.js
+  crawled: http://shop.vuln.lab:3000/coding-challenge-page.component-VgIt3B-z.js
+  crawled: http://shop.vuln.lab:3000/chunk-DAJ4olp_.js
+  crawled: http://shop.vuln.lab:3000/chunk-eYAgyLdn.js
+  crawled: http://shop.vuln.lab:3000/chunk-LgKEbQmx.js
+  crawled: http://shop.vuln.lab:3000/chunk-v9EE5s4z.js
+  crawled: http://shop.vuln.lab:3000/chunk-BJ5LcrCb.js
+2026-09-26T15:22:50Z [INFO] Crawler discovered 31 candidate assets
+2026-09-26T15:22:50Z [INFO] Classified 31 assets
+2026-09-26T15:22:52Z [INFO] Download manifest updated: /root/jsintel/output_lab_run/reports/assets.json
+INFO Extraction completed with 0 recoverable errors
+2026-09-26T15:23:18Z [INFO] Extraction reports written to /root/jsintel/output_lab_run/reports
+{"hosts_ranked": 3, "hosts_critical_high": 1, "top_host": "shop.vuln.lab", "top_score": 1241}
+2026-09-26T15:23:20Z [INFO] Completed successfully. Reports: /root/jsintel/output_lab_run/reports (see triage.html)

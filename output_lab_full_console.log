@@ -1,0 +1,20 @@
+2026-09-26T15:29:09Z [INFO] JSIntel Phase 1 started (workers: 20)
+2026-09-26T15:29:09Z [INFO] Pipeline: Crawler -> Normalizer -> Classifier -> Downloader -> Extractor -> Database -> Reports
+2026-09-26T15:29:09Z [INFO] Crawl scope anchored to authorized scope: dvwa.vuln.lab goat.vuln.lab shop.vuln.lab
+2026-09-26T15:29:09Z [INFO] Port scan: 3 in-scope host(s) for web-service discovery
+INFO Port scan (nmap): 5 open port(s) across 3 host(s)
+INFO Discovered 5 web service(s) (4 on non-standard ports) across 3 host(s) [scanner: nmap].
+2026-09-26T15:29:10Z [INFO] Port scan complete: 5 web service(s) -> /root/jsintel/output_lab_full/assets/services.txt
+2026-09-26T15:29:10Z [INFO] Crawling 7 combined seeds (input + subdomains + services)
+2026-09-26T15:29:11Z [INFO] Crawl scope (registered domains): dvwa.vuln.lab goat.vuln.lab shop.vuln.lab
+2026-09-26T15:29:11Z [INFO] Crawling with katana (depth 5)
+2026-09-26T15:29:42Z [INFO] Crawler discovered 31 candidate assets
+2026-09-26T15:29:42Z [INFO] Classified 31 assets
+2026-09-26T15:29:44Z [INFO] Download manifest updated: /root/jsintel/output_lab_full/reports/assets.json
+INFO Extraction completed with 0 recoverable errors
+2026-09-26T15:30:09Z [INFO] Extraction reports written to /root/jsintel/output_lab_full/reports
+2026-09-26T15:30:09Z [INFO] Webshot: screenshotting 5 discovered service(s)
+INFO Screenshotted 5/5 service(s) into 3 visual cluster(s) [engine: /usr/bin/chromium].
+2026-09-26T15:30:28Z [INFO] Webshot gallery: /root/jsintel/output_lab_full/reports/screenshots.html
+{"hosts_ranked": 3, "hosts_critical_high": 1, "top_host": "shop.vuln.lab", "top_score": 1224}
+2026-09-26T15:30:30Z [INFO] Completed successfully. Reports: /root/jsintel/output_lab_full/reports (see triage.html)

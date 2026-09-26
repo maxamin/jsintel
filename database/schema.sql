@@ -53,3 +53,21 @@ CREATE TABLE IF NOT EXISTS fuzz_results (
   note TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Web services discovered by the port scanner (reports/ports.json), enriched
+-- with the matching screenshot (reports/screenshots.json) when the webshot stage
+-- ran. File-only until now; storing them here makes services queryable alongside
+-- assets/endpoints/findings and is the join the unified triage report is built on.
+CREATE TABLE IF NOT EXISTS services (
+  id INTEGER PRIMARY KEY,
+  host TEXT NOT NULL,
+  port INTEGER NOT NULL,
+  scheme TEXT,
+  url TEXT NOT NULL UNIQUE,
+  status INTEGER,
+  server TEXT,
+  title TEXT,
+  mirror_of TEXT,
+  screenshot_path TEXT,
+  cluster INTEGER,
+  discovered_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -25,6 +26,30 @@ def _status_set(value: str, default: frozenset[int]) -> frozenset[int]:
     return frozenset(int(code) for code in value.replace(",", " ").split())
 
 
+def _expand_scope_args(raw: list[str]) -> list[str]:
+    """Expand any ``--scope`` value that names a file into its lines.
+
+    Operators keep authorized targets in a file (one host/domain per line), so a
+    value that is an existing path -- or an explicit ``@path`` -- is read as a
+    list of hosts rather than mistaken for a single literal host. Inline hosts
+    and comment/blank lines are passed through untouched.
+    """
+    expanded: list[str] = []
+    for entry in raw:
+        token = entry[1:] if entry.startswith("@") else entry
+        path = Path(token)
+        if (entry.startswith("@") or path.is_file()) and path.is_file():
+            for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    expanded.append(line)
+        elif entry.startswith("@"):
+            LOGGER.warning("Scope file not found: %s", token)
+        else:
+            expanded.append(entry)
+    return expanded
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python3 -m modules.fuzzer",
@@ -35,7 +60,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--scope",
         action="append",
         default=[],
-        help="Authorized host or domain (repeatable, or comma/space separated). Subdomains are included.",
+        help="Authorized host or domain (repeatable, or comma/space separated); "
+        "may be a file of hosts (one per line) or @file. Subdomains are included.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Plan candidates and write fuzz.json without sending requests.")
     parser.add_argument("--offline", action="store_true", help="Use only bundled seed wordlists; never download.")
@@ -53,6 +79,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-local", action="store_true", help="Do not use locally installed SecLists wordlists.")
     parser.add_argument("--seclists", default="", help="Path to a SecLists install (root or Web-Content dir).")
     parser.add_argument("--user-agent", default=FuzzConfig().user_agent, help="Request User-Agent header.")
+    parser.add_argument("--cookie", default="", help="Cookie header for authenticated fuzzing (overrides JSINTEL_AUTH_COOKIE).")
+    parser.add_argument("--jwt", default="", help="Bearer/JWT token for authenticated fuzzing (overrides JSINTEL_AUTH_BEARER).")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging.")
     return parser
 
@@ -69,7 +97,10 @@ def main(argv: list[str] | None = None) -> int:
         LOGGER.error("No reports directory at %s -- run the extractor first.", reports_dir)
         return 2
 
-    scope = Scope.parse(args.scope) if args.scope else Scope()
+    scope_args = _expand_scope_args(args.scope)
+    # Join and re-parse so comma/space separators inside a single --scope value
+    # (e.g. -f "a.com,b.com") are honoured, not just repeated --scope flags.
+    scope = Scope.parse(" ".join(scope_args)) if scope_args else Scope()
     if not scope and not args.dry_run:
         LOGGER.error(
             "Refusing to send requests without an authorization scope. "
@@ -81,6 +112,17 @@ def main(argv: list[str] | None = None) -> int:
         ext if ext.startswith(".") else "." + ext
         for ext in args.extensions.replace(",", " ").split()
     )
+    # Authenticated fuzzing: CLI flags take precedence over the inherited env
+    # (JSINTEL_AUTH_COOKIE / JSINTEL_AUTH_BEARER set by jsintel.sh --cookie/--jwt).
+    from .. import authutil
+    env = dict(os.environ)
+    if args.cookie:
+        env["JSINTEL_AUTH_COOKIE"] = args.cookie
+    if args.jwt:
+        env["JSINTEL_AUTH_BEARER"] = args.jwt
+    extra_headers = authutil.auth_headers(env)
+    if extra_headers:
+        LOGGER.info("Authenticated fuzzing enabled (%s)", authutil.describe(env))
     config = FuzzConfig(
         concurrency=max(1, args.concurrency),
         delay=max(0.0, args.delay),
@@ -98,6 +140,7 @@ def main(argv: list[str] | None = None) -> int:
         use_local=not args.no_local,
         seclists_dir=args.seclists,
         user_agent=args.user_agent,
+        extra_headers=extra_headers,
     )
 
     mode = "dry-run (no requests)" if args.dry_run else f"scope={sorted(scope.hosts)}"

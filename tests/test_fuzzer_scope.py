@@ -41,3 +41,25 @@ def test_port_and_userinfo_are_ignored():
 def test_protocol_relative_urls():
     scope = Scope(["example.test"])
     assert scope.allows("//app.example.test/x")
+
+
+def test_bare_tld_entry_is_refused():
+    # A stray ".com" line strips to "com"; treating it as scope would authorize
+    # every .com host, so it must be dropped rather than trusted.
+    scope = Scope.parse(".com\n.uk\nexample.test")
+    assert scope.hosts == frozenset({"example.test"})
+    assert not scope.allows("https://anything.com/x")
+    assert not scope.allows("https://foo.uk/x")
+
+
+def test_leading_dot_domain_is_kept_as_domain():
+    # ".example.test" is common "all subdomains" notation and must survive.
+    scope = Scope.parse(".example.test")
+    assert scope.hosts == frozenset({"example.test"})
+    assert scope.allows("https://api.example.test/x")
+
+
+def test_multi_label_public_suffix_domain_matches_subdomains():
+    scope = Scope(["clearpay.co.uk"])
+    assert scope.allows("https://portal.clearpay.co.uk/x")
+    assert not scope.allows("https://other.co.uk/x")

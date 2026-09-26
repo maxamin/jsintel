@@ -1,0 +1,1 @@
+[{"asset_url":"http://dvwa.vuln.lab:8081/login.php","finding_type":"html_form","severity":"info","value":"POST form action='login.php' fields=[Login, password, user_token, username]","source":"","sink":""}]

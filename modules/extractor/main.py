@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from .ast_utils import clear_ast_cache, set_current_index
 from .findings import ExtractionError, Finding, SecurityFinding
 from .models import Asset
 from .parser import parse_js, parse_jsx, parse_tsx, parse_typescript
@@ -113,6 +114,9 @@ def run(manifest: Path, output: Path) -> int:
                     tree = parse_js(source)
             if tree is not None:
                 object.__setattr__(asset, "_tree", tree)
+            # Build the shared type index once so every analyzer's _find_nodes call
+            # is a lookup rather than a full re-traversal of the (huge) tree.
+            set_current_index(tree)
             asset_findings: list[Finding] = []
             for analyzer in select(analyzers, asset.asset_type):
                 try:
@@ -126,6 +130,9 @@ def run(manifest: Path, output: Path) -> int:
             security.sort(key=lambda f: _SEVERITY_ORDER.get(f.severity, 99))
             for finding in other + security:
                 writer.write(finding)
+            # Release this asset's memoized AST traversal before moving on so the
+            # cache never holds more than one file's nodes at a time.
+            clear_ast_cache()
         for analyzer in analyzers:
             for finding in analyzer.finalize():
                 writer.write(finding)

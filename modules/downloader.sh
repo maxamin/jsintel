@@ -14,11 +14,16 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 manifest=pathlib.Path(os.environ['MANIFEST']); asset_dir=pathlib.Path(os.environ['ASSET_DIR']); asset_dir.mkdir(parents=True,exist_ok=True)
 items=json.loads(manifest.read_text())
+# Authenticated downloads: send the operator-supplied session (--cookie/--jwt) so
+# assets behind auth download correctly. Only in-scope assets are ever fetched.
+_AUTH={}
+if os.environ.get('JSINTEL_AUTH_COOKIE','').strip(): _AUTH['Cookie']=os.environ['JSINTEL_AUTH_COOKIE'].strip()
+if os.environ.get('JSINTEL_AUTH_BEARER','').strip(): _AUTH['Authorization']='Bearer '+os.environ['JSINTEL_AUTH_BEARER'].strip()
 def fetch(index, item):
     url=item['url']; parsed=urllib.parse.urlsplit(url); base=pathlib.Path(parsed.path).name or 'asset'
     safe=re.sub(r'[^A-Za-z0-9._-]', '_', base)[:120]
     path=asset_dir / f'{index:06d}_{safe}'
-    part=path.with_suffix(path.suffix+'.part'); headers={}
+    part=path.with_suffix(path.suffix+'.part'); headers=dict(_AUTH)
     if part.exists(): headers['Range']=f'bytes={part.stat().st_size}-'
     try:
         session=requests.Session()

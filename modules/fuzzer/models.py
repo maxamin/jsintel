@@ -122,6 +122,9 @@ class FuzzConfig:
     context_depth: int = 2
     methods: tuple[str, ...] = ("GET",)
     user_agent: str = "JSIntel/0.2 (+authorized-recon; https://github.com/)"
+    # Extra request headers (e.g. an authenticated Cookie / Authorization) sent with
+    # every probe. Only reaches in-scope hosts (the fuzzer is scope-gated).
+    extra_headers: dict[str, str] = field(default_factory=dict)
     match_status: frozenset[int] = DEFAULT_MATCH_STATUS
     filter_status: frozenset[int] = DEFAULT_FILTER_STATUS
     extensions: tuple[str, ...] = ()

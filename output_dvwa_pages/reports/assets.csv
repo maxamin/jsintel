@@ -1,0 +1,2 @@
+url,local_path,asset_type,sha256,size_bytes,mime_type,status,discovered_at
+http://dvwa.vuln.lab:8081/login.php,/root/jsintel/output_dvwa_pages/assets/000000_login.php,page,02983d826f627677a348626b6b6187f32d59944a36e26e9868e62c679068fc28,1342,text/html,downloaded,2026-09-26 17:42:13

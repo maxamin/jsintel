@@ -1,0 +1,26 @@
+perl-base:
+  Installed: 5.42.3-1
+  Candidate: 5.42.3-1
+  Version table:
+ *** 5.42.3-1 500
+        500 http://http.kali.org/kali kali-rolling/main amd64 Packages
+        100 /var/lib/dpkg/status
+     5.40.1-6+deb13u1 500
+        500 mirror+file:/etc/apt/mirrors/debian.list trixie/main amd64 Packages
+libdbi-perl:
+  Installed: (none)
+  Candidate: 1.652-2~deb13u1
+  Version table:
+     1.652-2~deb13u1 500
+        500 mirror+file:/etc/apt/mirrors/debian.list trixie/main amd64 Packages
+        500 mirror+file:/etc/apt/mirrors/debian-security.list trixie-security/main amd64 Packages
+     1.651-1+b1 500
+        500 http://http.kali.org/kali kali-rolling/main amd64 Packages
+mariadb-server:
+  Installed: (none)
+  Candidate: 1:11.8.8-1
+  Version table:
+     1:11.8.8-1 500
+        500 http://http.kali.org/kali kali-rolling/main amd64 Packages
+     1:11.8.6-0+deb13u1 500
+        500 mirror+file:/etc/apt/mirrors/debian.list trixie/main amd64 Packages

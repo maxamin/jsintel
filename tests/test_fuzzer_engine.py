@@ -125,3 +125,26 @@ def test_max_candidates_cap_is_enforced(tmp_path: Path):
 
 def test_missing_reports_dir_reads_no_origins(tmp_path: Path):
     assert load_origins(tmp_path / "reports") == []
+
+
+def test_candidate_budget_is_shared_fairly_across_hosts(tmp_path: Path):
+    # Regression for the gala.com run where one soft-404 SPA host consumed the
+    # entire candidate cap. With many origins on host A and one on host B, the cap
+    # must not be monopolised by A -- host B must still get candidates.
+    provider = _offline_provider(tmp_path)
+    # 50 distinct API paths on host A, 1 on host B.
+    origins = [(f"https://a.example.test/api/v{i}/users", "") for i in range(50)]
+    origins.append(("https://b.example.test/api/v1/users", ""))
+    scope = Scope(["example.test"])
+    config = FuzzConfig(max_candidates=400, max_words_per_category=200, context_depth=1)
+
+    candidates, by_category, in_scope = build_candidates(origins, scope, provider, config)
+
+    assert len(candidates) == 400  # cap reached
+    hosts = {c.url.split("/")[2] for c in candidates}
+    assert "b.example.test" in hosts, "the lone host B was starved by host A"
+    a_count = sum(1 for c in candidates if c.url.split("/")[2] == "a.example.test")
+    b_count = sum(1 for c in candidates if c.url.split("/")[2] == "b.example.test")
+    # Host B (one origin) should get a meaningful share, not a token 1-2 URLs.
+    assert b_count >= 50
+    assert a_count >= b_count  # A has far more origins, so it still leads

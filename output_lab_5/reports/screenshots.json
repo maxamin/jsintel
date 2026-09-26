@@ -1,0 +1,72 @@
+[
+  {
+    "url": "http://api.vuln.lab:5001/",
+    "file": "/root/jsintel/output_lab_5/assets/screenshots/api.vuln.lab_5001.png",
+    "status": 200,
+    "title": "",
+    "server": "Werkzeug/2.2.3 Python/3.11.15",
+    "flagged": false,
+    "phash": "4000000000000000",
+    "cluster": 0
+  },
+  {
+    "url": "http://dvwa.vuln.lab:8081/",
+    "file": "/root/jsintel/output_lab_5/assets/screenshots/dvwa.vuln.lab_8081.png",
+    "status": 200,
+    "title": "Login :: Damn Vulnerable Web Application (DVWA)",
+    "server": "",
+    "flagged": false,
+    "phash": "3030201000000030",
+    "cluster": 0
+  },
+  {
+    "url": "http://goat.vuln.lab:8082/",
+    "file": "/root/jsintel/output_lab_5/assets/screenshots/goat.vuln.lab_8082.png",
+    "status": 404,
+    "title": "",
+    "server": "",
+    "flagged": false,
+    "phash": "0040604c0c000000",
+    "cluster": 0
+  },
+  {
+    "url": "http://goat.vuln.lab:9090/",
+    "file": "/root/jsintel/output_lab_5/assets/screenshots/goat.vuln.lab_9090.png",
+    "status": 404,
+    "title": "",
+    "server": "",
+    "flagged": false,
+    "phash": "0040604c0c000000",
+    "cluster": 0
+  },
+  {
+    "url": "http://graphql.vuln.lab:5013/",
+    "file": "/root/jsintel/output_lab_5/assets/screenshots/graphql.vuln.lab_5013.png",
+    "status": 200,
+    "title": "Damn Vulnerable GraphQL Application",
+    "server": "",
+    "flagged": false,
+    "phash": "2310444040c0c0c0",
+    "cluster": 1
+  },
+  {
+    "url": "http://shop.vuln.lab:3000/",
+    "file": "/root/jsintel/output_lab_5/assets/screenshots/shop.vuln.lab_3000.png",
+    "status": 200,
+    "title": "OWASP Juice Shop",
+    "server": "",
+    "flagged": true,
+    "phash": "4e79317355652707",
+    "cluster": 2
+  },
+  {
+    "url": "http://shop.vuln.lab:80/",
+    "file": "/root/jsintel/output_lab_5/assets/screenshots/shop.vuln.lab_80.png",
+    "status": 200,
+    "title": "",
+    "server": "SimpleHTTP/0.6 Python/3.14.7",
+    "flagged": true,
+    "phash": "0000000000000000",
+    "cluster": 0
+  }
+]

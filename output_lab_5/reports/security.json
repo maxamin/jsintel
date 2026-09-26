@@ -1,0 +1,322 @@
+[
+  {
+    "asset_url": "http://api.vuln.lab:5001/",
+    "finding_type": "missing_security_header",
+    "severity": "medium",
+    "value": "No Content-Security-Policy header",
+    "source": "live-service",
+    "sink": "Content-Security-Policy"
+  },
+  {
+    "asset_url": "http://api.vuln.lab:5001/",
+    "finding_type": "missing_security_header",
+    "severity": "low",
+    "value": "No X-Content-Type-Options: nosniff",
+    "source": "live-service",
+    "sink": "X-Content-Type-Options"
+  },
+  {
+    "asset_url": "http://api.vuln.lab:5001/",
+    "finding_type": "clickjacking",
+    "severity": "low",
+    "value": "No X-Frame-Options and no CSP frame-ancestors",
+    "source": "live-service",
+    "sink": "X-Frame-Options"
+  },
+  {
+    "asset_url": "http://api.vuln.lab:5001/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Referrer-Policy header",
+    "source": "live-service",
+    "sink": "Referrer-Policy"
+  },
+  {
+    "asset_url": "http://api.vuln.lab:5001/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Permissions-Policy header",
+    "source": "live-service",
+    "sink": "Permissions-Policy"
+  },
+  {
+    "asset_url": "http://api.vuln.lab:5001/",
+    "finding_type": "information_disclosure",
+    "severity": "low",
+    "value": "Server banner: Werkzeug/2.2.3 Python/3.11.15",
+    "source": "live-service",
+    "sink": "Server"
+  },
+  {
+    "asset_url": "http://dvwa.vuln.lab:8081/",
+    "finding_type": "missing_security_header",
+    "severity": "medium",
+    "value": "No Content-Security-Policy header",
+    "source": "live-service",
+    "sink": "Content-Security-Policy"
+  },
+  {
+    "asset_url": "http://dvwa.vuln.lab:8081/",
+    "finding_type": "missing_security_header",
+    "severity": "low",
+    "value": "No X-Content-Type-Options: nosniff",
+    "source": "live-service",
+    "sink": "X-Content-Type-Options"
+  },
+  {
+    "asset_url": "http://dvwa.vuln.lab:8081/",
+    "finding_type": "clickjacking",
+    "severity": "low",
+    "value": "No X-Frame-Options and no CSP frame-ancestors",
+    "source": "live-service",
+    "sink": "X-Frame-Options"
+  },
+  {
+    "asset_url": "http://dvwa.vuln.lab:8081/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Referrer-Policy header",
+    "source": "live-service",
+    "sink": "Referrer-Policy"
+  },
+  {
+    "asset_url": "http://dvwa.vuln.lab:8081/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Permissions-Policy header",
+    "source": "live-service",
+    "sink": "Permissions-Policy"
+  },
+  {
+    "asset_url": "http://dvwa.vuln.lab:8081/",
+    "finding_type": "information_disclosure",
+    "severity": "low",
+    "value": "X-Powered-By: PHP/8.4.26",
+    "source": "live-service",
+    "sink": "X-Powered-By"
+  },
+  {
+    "asset_url": "http://dvwa.vuln.lab:8081/",
+    "finding_type": "insecure_cookie",
+    "severity": "low",
+    "value": "Cookie 'security' missing SameSite",
+    "source": "live-service",
+    "sink": "Set-Cookie"
+  },
+  {
+    "asset_url": "http://goat.vuln.lab:8082/",
+    "finding_type": "missing_security_header",
+    "severity": "medium",
+    "value": "No Content-Security-Policy header",
+    "source": "live-service",
+    "sink": "Content-Security-Policy"
+  },
+  {
+    "asset_url": "http://goat.vuln.lab:8082/",
+    "finding_type": "missing_security_header",
+    "severity": "low",
+    "value": "No X-Content-Type-Options: nosniff",
+    "source": "live-service",
+    "sink": "X-Content-Type-Options"
+  },
+  {
+    "asset_url": "http://goat.vuln.lab:8082/",
+    "finding_type": "clickjacking",
+    "severity": "low",
+    "value": "No X-Frame-Options and no CSP frame-ancestors",
+    "source": "live-service",
+    "sink": "X-Frame-Options"
+  },
+  {
+    "asset_url": "http://goat.vuln.lab:8082/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Referrer-Policy header",
+    "source": "live-service",
+    "sink": "Referrer-Policy"
+  },
+  {
+    "asset_url": "http://goat.vuln.lab:8082/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Permissions-Policy header",
+    "source": "live-service",
+    "sink": "Permissions-Policy"
+  },
+  {
+    "asset_url": "http://goat.vuln.lab:9090/",
+    "finding_type": "missing_security_header",
+    "severity": "medium",
+    "value": "No Content-Security-Policy header",
+    "source": "live-service",
+    "sink": "Content-Security-Policy"
+  },
+  {
+    "asset_url": "http://goat.vuln.lab:9090/",
+    "finding_type": "missing_security_header",
+    "severity": "low",
+    "value": "No X-Content-Type-Options: nosniff",
+    "source": "live-service",
+    "sink": "X-Content-Type-Options"
+  },
+  {
+    "asset_url": "http://goat.vuln.lab:9090/",
+    "finding_type": "clickjacking",
+    "severity": "low",
+    "value": "No X-Frame-Options and no CSP frame-ancestors",
+    "source": "live-service",
+    "sink": "X-Frame-Options"
+  },
+  {
+    "asset_url": "http://goat.vuln.lab:9090/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Referrer-Policy header",
+    "source": "live-service",
+    "sink": "Referrer-Policy"
+  },
+  {
+    "asset_url": "http://goat.vuln.lab:9090/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Permissions-Policy header",
+    "source": "live-service",
+    "sink": "Permissions-Policy"
+  },
+  {
+    "asset_url": "http://graphql.vuln.lab:5013/",
+    "finding_type": "missing_security_header",
+    "severity": "medium",
+    "value": "No Content-Security-Policy header",
+    "source": "live-service",
+    "sink": "Content-Security-Policy"
+  },
+  {
+    "asset_url": "http://graphql.vuln.lab:5013/",
+    "finding_type": "missing_security_header",
+    "severity": "low",
+    "value": "No X-Content-Type-Options: nosniff",
+    "source": "live-service",
+    "sink": "X-Content-Type-Options"
+  },
+  {
+    "asset_url": "http://graphql.vuln.lab:5013/",
+    "finding_type": "clickjacking",
+    "severity": "low",
+    "value": "No X-Frame-Options and no CSP frame-ancestors",
+    "source": "live-service",
+    "sink": "X-Frame-Options"
+  },
+  {
+    "asset_url": "http://graphql.vuln.lab:5013/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Referrer-Policy header",
+    "source": "live-service",
+    "sink": "Referrer-Policy"
+  },
+  {
+    "asset_url": "http://graphql.vuln.lab:5013/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Permissions-Policy header",
+    "source": "live-service",
+    "sink": "Permissions-Policy"
+  },
+  {
+    "asset_url": "http://graphql.vuln.lab:5013/",
+    "finding_type": "insecure_cookie",
+    "severity": "medium",
+    "value": "Cookie 'env' missing HttpOnly",
+    "source": "live-service",
+    "sink": "Set-Cookie"
+  },
+  {
+    "asset_url": "http://graphql.vuln.lab:5013/",
+    "finding_type": "insecure_cookie",
+    "severity": "low",
+    "value": "Cookie 'env' missing SameSite",
+    "source": "live-service",
+    "sink": "Set-Cookie"
+  },
+  {
+    "asset_url": "http://graphql.vuln.lab:5013/graphql",
+    "finding_type": "graphql_introspection_enabled",
+    "severity": "high",
+    "value": "GraphQL introspection enabled (29 schema types exposed)",
+    "source": "live-service",
+    "sink": "__schema"
+  },
+  {
+    "asset_url": "http://shop.vuln.lab:80/",
+    "finding_type": "missing_security_header",
+    "severity": "medium",
+    "value": "No Content-Security-Policy header",
+    "source": "live-service",
+    "sink": "Content-Security-Policy"
+  },
+  {
+    "asset_url": "http://shop.vuln.lab:80/",
+    "finding_type": "missing_security_header",
+    "severity": "low",
+    "value": "No X-Content-Type-Options: nosniff",
+    "source": "live-service",
+    "sink": "X-Content-Type-Options"
+  },
+  {
+    "asset_url": "http://shop.vuln.lab:80/",
+    "finding_type": "clickjacking",
+    "severity": "low",
+    "value": "No X-Frame-Options and no CSP frame-ancestors",
+    "source": "live-service",
+    "sink": "X-Frame-Options"
+  },
+  {
+    "asset_url": "http://shop.vuln.lab:80/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Referrer-Policy header",
+    "source": "live-service",
+    "sink": "Referrer-Policy"
+  },
+  {
+    "asset_url": "http://shop.vuln.lab:80/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Permissions-Policy header",
+    "source": "live-service",
+    "sink": "Permissions-Policy"
+  },
+  {
+    "asset_url": "http://shop.vuln.lab:80/",
+    "finding_type": "information_disclosure",
+    "severity": "low",
+    "value": "Server banner: SimpleHTTP/0.6 Python/3.14.7",
+    "source": "live-service",
+    "sink": "Server"
+  },
+  {
+    "asset_url": "http://shop.vuln.lab:3000/",
+    "finding_type": "missing_security_header",
+    "severity": "medium",
+    "value": "No Content-Security-Policy header",
+    "source": "live-service",
+    "sink": "Content-Security-Policy"
+  },
+  {
+    "asset_url": "http://shop.vuln.lab:3000/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Referrer-Policy header",
+    "source": "live-service",
+    "sink": "Referrer-Policy"
+  },
+  {
+    "asset_url": "http://shop.vuln.lab:3000/",
+    "finding_type": "missing_security_header",
+    "severity": "info",
+    "value": "No Permissions-Policy header",
+    "source": "live-service",
+    "sink": "Permissions-Policy"
+  }
+]

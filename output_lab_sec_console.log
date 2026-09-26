@@ -1,0 +1,19 @@
+2026-09-26T17:11:59Z [INFO] JSIntel Phase 1 started (workers: 20)
+2026-09-26T17:11:59Z [INFO] Pipeline: Crawler -> Normalizer -> Classifier -> Downloader -> Extractor -> Database -> Reports
+2026-09-26T17:11:59Z [INFO] Crawl scope anchored to authorized scope: api.vuln.lab dvwa.vuln.lab goat.vuln.lab graphql.vuln.lab shop.vuln.lab
+2026-09-26T17:11:59Z [INFO] Port scan: 5 in-scope host(s) for web-service discovery
+INFO Port scan (nmap): 7 open port(s) across 5 host(s)
+INFO Discovered 7 web service(s) (6 on non-standard ports) across 5 host(s) [scanner: nmap].
+2026-09-26T17:12:00Z [INFO] Port scan complete: 7 web service(s) -> /root/jsintel/output_lab_sec/assets/services.txt
+2026-09-26T17:12:00Z [INFO] Crawling 9 combined seeds (input + subdomains + services)
+2026-09-26T17:12:02Z [INFO] Crawl scope (registered domains): api.vuln.lab dvwa.vuln.lab goat.vuln.lab graphql.vuln.lab shop.vuln.lab
+2026-09-26T17:12:02Z [INFO] Crawling with katana (depth 5)
+2026-09-26T17:12:34Z [INFO] Crawler discovered 35 candidate assets
+2026-09-26T17:12:34Z [INFO] Classified 35 assets
+2026-09-26T17:12:36Z [INFO] Download manifest updated: /root/jsintel/output_lab_sec/reports/assets.json
+INFO Extraction completed with 0 recoverable errors
+2026-09-26T17:13:08Z [INFO] Extraction reports written to /root/jsintel/output_lab_sec/reports
+2026-09-26T17:13:08Z [INFO] Analyzing live services (security headers / GraphQL / JWT)
+{"live_findings": 40, "by_severity": {"medium": 8, "low": 17, "info": 14, "high": 1}}
+{"hosts_ranked": 5, "hosts_critical_high": 1, "top_host": "shop.vuln.lab", "top_score": 1253}
+2026-09-26T17:13:13Z [INFO] Completed successfully. Reports: /root/jsintel/output_lab_sec/reports (see triage.html)

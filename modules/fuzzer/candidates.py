@@ -9,7 +9,9 @@ brute-forcing from ``/``. :func:`directory_contexts` derives those prefixes and
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlunsplit
+
+from .urlutil import safe_urlsplit
 
 from .models import Candidate, Category
 
@@ -25,13 +27,13 @@ def base_and_path(origin: str, fallback_base: str = "") -> tuple[str, str]:
     if value.startswith("//"):
         value = "https:" + value
     if "://" in value:
-        parts = urlsplit(value)
+        parts = safe_urlsplit(value)
         base = urlunsplit((parts.scheme, parts.netloc, "", "", ""))
         path = parts.path or "/"
         return base, path
     # Root-relative or bare path: needs a host from the discovering asset.
     if fallback_base:
-        fb = urlsplit(fallback_base if "://" in fallback_base else "https://" + fallback_base)
+        fb = safe_urlsplit(fallback_base if "://" in fallback_base else "https://" + fallback_base)
         base = urlunsplit((fb.scheme or "https", fb.netloc, "", "", ""))
     else:
         base = ""
@@ -61,8 +63,22 @@ def directory_contexts(path: str, depth: int = 2) -> list[str]:
     return contexts
 
 
+# Characters that, inside a wordlist entry, would corrupt the URL structure
+# rather than name a path segment: whitespace, a query/fragment introducer, or a
+# backslash. Some SecLists/Assetnote lists carry stray operator tokens ("?:",
+# "&&", "==", bare "#"); appended to a base they yield junk URLs like
+# "https://host/?:" (a query, not a path) that a permissive origin answers 200/403
+# to, inflating the "interesting" count. These are dropped before probing.
+_BAD_WORD_CHARS = frozenset(" \t\r\n?#\\")
+
+
 def _clean_word(word: str) -> str:
-    return word.strip().lstrip("/")
+    cleaned = word.strip().lstrip("/")
+    if not cleaned:
+        return ""
+    if any(ch in _BAD_WORD_CHARS or ord(ch) < 0x20 for ch in cleaned):
+        return ""
+    return cleaned
 
 
 def candidates_for(

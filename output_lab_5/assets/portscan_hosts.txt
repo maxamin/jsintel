@@ -1,0 +1,5 @@
+api.vuln.lab
+dvwa.vuln.lab
+goat.vuln.lab
+graphql.vuln.lab
+shop.vuln.lab
