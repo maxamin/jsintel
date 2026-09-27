@@ -1538,3 +1538,25 @@ win. **Suite: 435 passed.**
 Timings were taken on an 8-core host with an unrelated background extraction from another
 session pegging ~5 cores (load ~6–7), so absolute wall-clock is inflated/noisy; back-to-back
 ratios and coverage counts are the reliable figures (documented in BENCHMARKS.md).
+
+## MILESTONE — test coverage for under-tested modules (2026-09-27)
+
+Filled the modules that had no dedicated test file (found via a module→test reference
+sweep). All new tests are hermetic (no network, chromium, or live labs).
+
+- `tests/test_reporter.py` — reporter.main derives summary.json/summary.md/assets.csv from
+  a schema-built DB; verifies 'service' assets excluded from counts and info-severity
+  inventory split from real security findings.
+- `tests/test_triage.py` — build_triage ranking: severity weighting, info-only host not
+  scored, sensitive-endpoint detection, non-standard-port exposure, ranking order;
+  is_sensitive_endpoint; triage.main writes triage.json/md.
+- `tests/test_more_analyzers.py` — callgraph (caller→callee edges, dedupe, no-tree
+  silence) and dependency (relative + dynamic import resolution against the asset URL;
+  bare specifiers ignored).
+- `tests/test_extractor_internals.py` — typed findings to_record/report; JSONWriter valid
+  arrays + empty-scan; read_asset tolerates bad bytes; ast_utils _build_index/_find_nodes/
+  _walk/_extract_string_literals.
+- `tests/test_fuzzer_urlutil.py` — safe_urlsplit parses valid URLs and never raises on
+  malformed 'URL-like' junk (unterminated IPv6, regex fragments).
+
+**Suite: 435 → 454 passed (+19).**
