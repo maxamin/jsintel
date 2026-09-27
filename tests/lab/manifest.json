@@ -1,0 +1,62 @@
+{
+  "_comment": "JSIntel vulnerable-target lab. All services bind ONLY to their own 127.0.0.0/8 loopback address on non-standard ports and are reachable through a /etc/hosts subdomain tree. Intentionally vulnerable apps, run locally for authorized regression/stress testing of JSIntel. See tests/lab/README.md.",
+  "domain": "vuln.lab",
+  "targets": [
+    {
+      "id": "juice",
+      "host": "shop.vuln.lab",
+      "port": 3000,
+      "app": "OWASP Juice Shop",
+      "stack": "node",
+      "role": "js-rich Angular SPA \u2014 crawl/extract/fuzz centerpiece",
+      "health_path": "/",
+      "docker_image": "bkimminich/juice-shop:latest",
+      "bind_ip": "127.0.0.1"
+    },
+    {
+      "id": "vampi",
+      "host": "api.vuln.lab",
+      "port": 5001,
+      "app": "VAmPI",
+      "stack": "python-flask",
+      "role": "vulnerable REST API + JWT \u2014 endpoints/secrets/JWT analyzers",
+      "health_path": "/",
+      "docker_image": "erev0s/vampi:latest",
+      "bind_ip": "127.0.0.4"
+    },
+    {
+      "id": "dvga",
+      "host": "graphql.vuln.lab",
+      "port": 5013,
+      "app": "Damn Vulnerable GraphQL Application",
+      "stack": "python-flask",
+      "role": "GraphQL introspection/endpoint analyzer target",
+      "health_path": "/",
+      "docker_image": "dolevf/dvga:latest",
+      "bind_ip": "127.0.0.5"
+    },
+    {
+      "id": "webgoat",
+      "host": "goat.vuln.lab",
+      "port": 8082,
+      "app": "OWASP WebGoat",
+      "stack": "java-springboot",
+      "role": "Java estate host on a non-standard port",
+      "health_path": "/WebGoat/login",
+      "docker_image": "webgoat/webgoat:latest",
+      "bind_ip": "127.0.0.2"
+    },
+    {
+      "id": "dvwa",
+      "host": "dvwa.vuln.lab",
+      "port": 8081,
+      "app": "Damn Vulnerable Web Application",
+      "stack": "php-mariadb",
+      "role": "classic PHP multi-page app on a non-standard port",
+      "health_path": "/login.php",
+      "docker_image": "vulnerables/web-dvwa:latest",
+      "bind_ip": "127.0.0.3"
+    }
+  ],
+  "loopback_range": "127.0.0.0/8 (each app on its own address for a real subdomain tree)"
+}

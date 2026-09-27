@@ -23,7 +23,7 @@ import uuid
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
-from urllib.parse import urlsplit
+from .urlutil import safe_urlsplit
 
 from .models import Candidate, FuzzConfig, ProbeResult
 from .scope import Scope
@@ -84,7 +84,7 @@ class Prober:
 
     # -- calibration ------------------------------------------------------
     def _context_key(self, url: str) -> str:
-        parts = urlsplit(url)
+        parts = safe_urlsplit(url)
         directory = parts.path.rsplit("/", 1)[0] + "/"
         return f"{parts.scheme}://{parts.netloc}{directory}"
 
@@ -129,12 +129,21 @@ class Prober:
         if response.status not in self._config.match_status:
             return False, "unmatched-status"
         baseline = self._baselines.get(self._context_key(url))
-        if baseline is not None and baseline.soft and baseline.matches(response):
-            return False, "matches-soft-404-baseline"
+        if baseline is not None and baseline.matches(response):
+            # A random, near-certainly-absent path in this directory produced the
+            # same status and body size, so this response is the directory's
+            # catch-all and carries no discovery signal. Two shapes hit this:
+            #   * soft-404s (a 2xx/3xx "not found" page), and
+            #   * uniform edge/WAF walls -- e.g. an origin that answers *every*
+            #     path with an identical 403/401/500. Restricting suppression to
+            #     the 2xx/3xx case let those walls through, which is how a single
+            #     ether.fi run reported ~11.9k bogus "interesting" 403s.
+            return False, "matches-soft-404-baseline" if baseline.soft else "matches-catchall-baseline"
         return True, "match"
 
     def _send(self, url: str) -> Response:
-        headers = {"User-Agent": self._config.user_agent, "Accept": "*/*"}
+        headers = {"User-Agent": self._config.user_agent, "Accept": "*/*",
+                   **self._config.extra_headers}
         if self._config.delay > 0:
             with self._request_lock:
                 time.sleep(self._config.delay)

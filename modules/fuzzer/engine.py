@@ -79,31 +79,55 @@ def build_candidates(
         in_scope_origins.add(base + path)
         grouped[classify_path(origin)].append((origin, asset_url))
 
-    candidates: list[Candidate] = []
-    by_category: dict[str, int] = {}
+    # Build one lazy candidate generator per (category, origin) and bucket them by
+    # host (scheme://netloc). The candidate budget is then shared fairly across
+    # hosts by round-robin, so a single origin -- e.g. a soft-404 SPA host like
+    # arb.gala.com -- can no longer consume the entire cap and starve the other
+    # in-scope hosts and categories (observed on a real gala.com run: 20k/20k on
+    # one host). Dedup is global via the shared ``seen`` set.
     seen: set[str] = set()
+    words_cache: dict[Category, list[str]] = {}
+    host_buckets: dict[str, list] = {}
     for category, members in grouped.items():
-        words = provider.words_for(category, config.max_words_per_category)
+        if category not in words_cache:
+            words_cache[category] = provider.words_for(category, config.max_words_per_category)
+        words = words_cache[category]
         if not words:
             continue
-        before = len(candidates)
         for origin, asset_url in members:
-            for candidate in candidates_for(
-                origin,
-                asset_url,
-                category,
-                words,
-                depth=config.context_depth,
-                extensions=config.extensions,
-                seen=seen,
-            ):
+            base, _ = base_and_path(origin, asset_url)
+            generator = candidates_for(
+                origin, asset_url, category, words,
+                depth=config.context_depth, extensions=config.extensions, seen=seen,
+            )
+            host_buckets.setdefault(base, []).append(generator)
+
+    candidates: list[Candidate] = []
+    by_category: dict[str, int] = defaultdict(int)
+    chunk = 25  # candidates pulled per host per round -- finer = more even spread
+    active = [gens for gens in host_buckets.values()]
+    while active and len(candidates) < config.max_candidates:
+        next_active = []
+        for gens in active:
+            pulled = 0
+            while gens and pulled < chunk and len(candidates) < config.max_candidates:
+                try:
+                    candidate = next(gens[0])
+                except StopIteration:
+                    gens.pop(0)  # this origin is exhausted; move to the next
+                    continue
                 candidates.append(candidate)
-                if len(candidates) >= config.max_candidates:
-                    LOGGER.warning("Candidate cap %d reached; truncating", config.max_candidates)
-                    by_category[category.value] = len(candidates) - before
-                    return candidates, by_category, len(in_scope_origins)
-        by_category[category.value] = len(candidates) - before
-    return candidates, by_category, len(in_scope_origins)
+                by_category[candidate.category.value] += 1
+                pulled += 1
+            if gens and len(candidates) < config.max_candidates:
+                next_active.append(gens)
+        active = next_active
+    if len(candidates) >= config.max_candidates:
+        LOGGER.warning(
+            "Candidate cap %d reached; spread across %d host(s)",
+            config.max_candidates, len(host_buckets),
+        )
+    return candidates, dict(by_category), len(in_scope_origins)
 
 
 def write_report(reports_dir: Path, results: list[ProbeResult], summary: FuzzSummary) -> None:

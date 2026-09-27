@@ -12,6 +12,21 @@ from ..models import Asset
 
 _PATH_RE = re.compile(r'''(?<![\w/])/(?:api|graphql|v[0-9]+|rest)[A-Za-z0-9_./?=&${}:\-]*''', re.I)
 _HTTP_METHODS = {"fetch", "ajax", "request", "get", "post", "put", "delete", "patch"}
+_TEMPLATE_RE = re.compile(r"\$\{[^}]*\}")
+_MULTI_PARAM_RE = re.compile(r"(?:\{\})(?:\{\})+")
+
+
+def _normalize_placeholders(path: str) -> str:
+    """Collapse JS template-literal placeholders to a stable ``{}`` token.
+
+    Minified code yields paths like ``/rest/basket/${e}/checkout`` or
+    ``/api?module=${e}${n}${i}``. The raw ``${...}`` is noise: it is not a real
+    path segment, it defeats de-duplication (each minified var name differs), and
+    fed to the fuzzer it would be brute-forced as a literal directory. Normalising
+    to ``{}`` keeps the route structure legible and dedupes equivalent routes.
+    """
+    normalized = _TEMPLATE_RE.sub("{}", path)
+    return _MULTI_PARAM_RE.sub("{}", normalized)
 
 
 class EndpointAnalyzer(ASTAnalyzer):
@@ -32,5 +47,6 @@ class EndpointAnalyzer(ASTAnalyzer):
                         candidates.add(arg)
         else:
             candidates.update(_PATH_RE.findall(source))
-        for value in sorted(candidates):
+        normalized = {_normalize_placeholders(value) for value in candidates}
+        for value in sorted(normalized):
             yield EndpointFinding(asset_url=asset.url, endpoint=value)

@@ -9,7 +9,7 @@ markers), falling back to file/parameter/directory and finally the generic list.
 from __future__ import annotations
 
 import re
-from urllib.parse import urlsplit
+from .urlutil import safe_urlsplit
 
 from .models import Category
 
@@ -34,7 +34,7 @@ def _split(value: str) -> tuple[str, str]:
     if value.startswith("//"):
         value = "https:" + value
     if "://" in value:
-        parts = urlsplit(value)
+        parts = safe_urlsplit(value)
         return (parts.path or "/"), parts.query
     body = value.split("#", 1)[0]
     path, _, query = body.partition("?")

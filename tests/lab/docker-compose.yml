@@ -1,0 +1,97 @@
+# JSIntel vulnerable-target lab — full estate for a REAL Docker host.
+#
+# This is the portable form of the lab. In this project's sandbox the Docker
+# daemon cannot bridge-network containers, so the apps run natively/loopback (see
+# lab.sh) and the multi-service/CMS ones (bWAPP, Mutillidae, NodeGoat, RailsGoat)
+# can't run at all. On any normal Docker host they all come up with:
+#
+#     docker compose -f tests/lab/docker-compose.yml up -d
+#
+# Each app is published on a distinct NON-standard host port (matching the lab's
+# "non-standard ports" goal). For the /etc/hosts subdomain tree, map the hostnames
+# to 127.0.0.1 and point JSIntel at them, e.g.:
+#     shop.vuln.docker -> :3000 (Juice Shop), api.vuln.docker -> :5001 (VAmPI), …
+#     ./jsintel.sh -i http://shop.vuln.docker:3000/ -p shop.vuln.docker -w
+#
+# ⚠ Every service here is intentionally vulnerable. Bind to localhost only and never
+#   expose this compose to an untrusted network.
+services:
+
+  juice-shop:                       # Angular SPA — JS extraction centerpiece
+    image: bkimminich/juice-shop:latest
+    ports: ["127.0.0.1:3000:3000"]
+    restart: unless-stopped
+
+  webgoat:                          # Java — WebGoat + WebWolf
+    image: webgoat/goatandwolf:latest
+    ports: ["127.0.0.1:8082:8080", "127.0.0.1:9090:9090"]
+    restart: unless-stopped
+
+  dvwa:                             # PHP + bundled MySQL (self-contained image)
+    image: vulnerables/web-dvwa:latest
+    ports: ["127.0.0.1:8081:80"]
+    restart: unless-stopped
+
+  vampi:                            # Flask REST API + JWT
+    image: erev0s/vampi:latest
+    ports: ["127.0.0.1:5001:5000"]
+    restart: unless-stopped
+
+  dvga:                             # Damn Vulnerable GraphQL Application
+    image: dolevf/dvga:latest
+    ports: ["127.0.0.1:5013:5013"]
+    environment: { WEB_HOST: 0.0.0.0 }
+    restart: unless-stopped
+
+  bwapp:                            # bWAPP — PHP CMS-style app (Apache+MySQL bundled)
+    image: raesene/bwapp:latest     # blocked in the sandbox (multi-service on :80)
+    ports: ["127.0.0.1:8083:80"]
+    restart: unless-stopped
+
+  mutillidae:                       # OWASP Mutillidae II / NOWASP (Apache+MySQL bundled)
+    image: citizenstig/nowasp:latest
+    ports: ["127.0.0.1:8084:80"]
+    restart: unless-stopped
+
+  # ---- WordPress CMS (app + its own DB) --------------------------------------
+  wordpress:
+    image: wordpress:latest
+    depends_on: [wordpress-db]
+    ports: ["127.0.0.1:8085:80"]
+    environment:
+      WORDPRESS_DB_HOST: wordpress-db
+      WORDPRESS_DB_USER: wp
+      WORDPRESS_DB_PASSWORD: wp
+      WORDPRESS_DB_NAME: wordpress
+    restart: unless-stopped
+  wordpress-db:
+    image: mariadb:11
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wp
+      MARIADB_PASSWORD: wp
+      MARIADB_ROOT_PASSWORD: rootpw
+    restart: unless-stopped
+
+  # ---- NodeGoat (Express + MongoDB) — blocked in the sandbox (no mongod) ------
+  nodegoat-db:
+    image: mongo:6
+    restart: unless-stopped
+  nodegoat:
+    image: ghcr.io/owasp/nodegoat:latest   # or build from github.com/OWASP/NodeGoat
+    depends_on: [nodegoat-db]
+    ports: ["127.0.0.1:4000:4000"]
+    environment: { MONGODB_URI: "mongodb://nodegoat-db:27017/nodegoat" }
+    restart: unless-stopped
+
+  # ---- RailsGoat (Ruby on Rails) — needs bundle install + db:setup ------------
+  railsgoat:
+    image: owasp/railsgoat:latest
+    command: sh -c "bundle install && bundle exec rake db:setup && bundle exec rails server -b 0.0.0.0 -p 3001"
+    ports: ["127.0.0.1:3001:3001"]
+    restart: unless-stopped
+
+# crAPI (rich React SPA + microservices + GraphQL + JWT) ships its own large
+# compose — run it separately from the OWASP crAPI repo:
+#   git clone https://github.com/OWASP/crAPI && cd crAPI/deploy/docker && docker compose up -d
+# then point JSIntel at http://localhost:8888/ (web) and its API hosts.

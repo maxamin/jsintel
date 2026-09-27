@@ -89,3 +89,28 @@ def test_candidates_extensions_on_absolute_origin():
     urls = {c.url for c in cands}
     assert "https://app.example.test/assets/main" in urls
     assert "https://app.example.test/assets/main.js" in urls
+
+
+def test_junk_operator_words_are_filtered():
+    # SecLists/Assetnote lists occasionally carry stray tokens that would corrupt
+    # the URL structure -- whitespace, or a query/fragment introducer that turns
+    # the path into "https://host/?:" (a query, not a path). Those are dropped so a
+    # permissive origin's 200/403 to them can't inflate the interesting count (part
+    # of the ether.fi failure mode). Ugly-but-valid path segments ("&&", "==") are
+    # kept: the calibration baseline fix, not word filtering, suppresses their noise.
+    words = ["users", "?:", "a b", "adm#in", "bad\\word", "&&", "login"]
+    cands = list(
+        candidates_for(
+            "/api/v1/users",
+            "https://app.example.test/static/main.js",
+            Category.API,
+            words,
+            depth=1,
+        )
+    )
+    produced = {c.word for c in cands}
+    assert produced == {"users", "&&", "login"}
+    assert all(
+        "?" not in c.url and "#" not in c.url and " " not in c.url and "\\" not in c.url
+        for c in cands
+    )

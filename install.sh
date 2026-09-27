@@ -8,7 +8,9 @@ if ! command -v apt-get >/dev/null; then
 fi
 SUDO=(); [[ ${EUID:-$(id -u)} -eq 0 ]] || SUDO=(sudo)
 "${SUDO[@]}" apt-get update
-"${SUDO[@]}" apt-get install -y python3 python3-pip python3-venv jq curl wget git sqlite3 golang-go
+# chromium powers headless screenshots (webshot `-w` and the listener's `--aggressive`
+# response captures); nmap is used by the web-service port scan (`-p`).
+"${SUDO[@]}" apt-get install -y python3 python3-pip python3-venv jq curl wget git sqlite3 golang-go proxychains4 nmap chromium
 
 python3 -m pip install --user -r "$BASE_DIR/requirements.txt"
 GO_BIN="$(go env GOPATH)/bin"

@@ -44,3 +44,39 @@ def test_offline_scoped_dry_run_writes_summary(tmp_path: Path):
     summary = json.loads((tmp_path / "reports" / "fuzz_summary.json").read_text())
     assert summary["in_scope_origins"] == 1
     assert summary["candidates"] > 0
+
+
+def test_scope_from_file(tmp_path: Path):
+    _seed_reports(tmp_path)
+    scope_file = tmp_path / "domains.txt"
+    scope_file.write_text("# comment\napp.example.test\nother.test\n", encoding="utf-8")
+    rc = main(
+        ["--output", str(tmp_path), "--scope", str(scope_file),
+         "--dry-run", "--offline", "--max-words", "5"]
+    )
+    assert rc == 0
+    summary = json.loads((tmp_path / "reports" / "fuzz_summary.json").read_text())
+    assert summary["in_scope_origins"] == 1
+    assert summary["candidates"] > 0
+
+
+def test_at_file_scope_reference(tmp_path: Path):
+    _seed_reports(tmp_path)
+    scope_file = tmp_path / "scope.list"
+    scope_file.write_text("app.example.test\n", encoding="utf-8")
+    rc = main(
+        ["--output", str(tmp_path), "--scope", f"@{scope_file}",
+         "--dry-run", "--offline", "--max-words", "3"]
+    )
+    assert rc == 0
+    assert json.loads((tmp_path / "reports" / "fuzz_summary.json").read_text())["in_scope_origins"] == 1
+
+
+def test_comma_separated_single_scope_value(tmp_path: Path):
+    _seed_reports(tmp_path)
+    rc = main(
+        ["--output", str(tmp_path), "--scope", "app.example.test,other.test",
+         "--dry-run", "--offline", "--max-words", "3"]
+    )
+    assert rc == 0
+    assert json.loads((tmp_path / "reports" / "fuzz_summary.json").read_text())["in_scope_origins"] == 1

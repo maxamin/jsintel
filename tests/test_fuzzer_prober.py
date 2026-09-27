@@ -74,6 +74,37 @@ def test_403_is_matched():
     assert result.interesting and result.status == 403
 
 
+def test_uniform_403_wall_is_filtered_as_catchall():
+    # Regression for an ether.fi run where an edge/WAF answered *every* path with
+    # an identical 403: the random calibration probe and the candidate both get
+    # the same 403/length, so the candidate must be suppressed as a catch-all --
+    # not reported as ~11.9k bogus "interesting" 403s.
+    transport = FakeTransport(
+        {
+            "jsintel-": Response(status=403, length=70, words=3),
+            "/admin": Response(status=403, length=70, words=3),
+        }
+    )
+    prober = Prober(transport, Scope(["example.test"]), FuzzConfig(concurrency=1))
+    result = prober.probe_all([_candidate("https://a.example.test/admin")])[0]
+    assert not result.interesting
+    assert result.note == "matches-catchall-baseline"
+
+
+def test_403_differing_from_wall_baseline_is_still_interesting():
+    # A protected resource that answers 403 with a *different* body than the
+    # directory's catch-all 403 is a real signal and must survive the filter.
+    transport = FakeTransport(
+        {
+            "jsintel-": Response(status=403, length=70, words=3),
+            "/admin": Response(status=403, length=5000, words=800),
+        }
+    )
+    prober = Prober(transport, Scope(["example.test"]), FuzzConfig(concurrency=1))
+    result = prober.probe_all([_candidate("https://a.example.test/admin")])[0]
+    assert result.interesting and result.status == 403
+
+
 def test_out_of_scope_candidate_is_never_sent():
     transport = FakeTransport({})
     prober = Prober(transport, Scope(["example.test"]), FuzzConfig(concurrency=1))

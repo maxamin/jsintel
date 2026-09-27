@@ -1,0 +1,3 @@
+http://wp.vuln.lab:8083/
+http://react.vuln.lab:8091/
+http://django.vuln.lab:8092/

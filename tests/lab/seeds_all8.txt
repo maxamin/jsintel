@@ -1,0 +1,8 @@
+http://shop.vuln.lab:3000/
+http://api.vuln.lab:5001/
+http://graphql.vuln.lab:5013/
+http://goat.vuln.lab:8082/WebGoat/login
+http://dvwa.vuln.lab:8081/login.php
+http://wp.vuln.lab:8083/
+http://react.vuln.lab:8091/
+http://django.vuln.lab:8092/

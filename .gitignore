@@ -24,3 +24,23 @@ output/**
 !output/logs/.gitkeep
 reports/**
 !reports/.gitkeep
+
+# --- Recon run outputs (large; may contain real-target data) ---
+/output_*/
+*.log
+
+# --- Real-target recon + seed/target lists (local, possibly sensitive) ---
+/ether_fi_runs/
+/domains.txt
+/urls
+/seeds.txt
+/howhold
+
+# --- Local agent / editor state ---
+.claude/
+
+# --- Vulnerable-target lab RUNTIME (3.5GB of cloned upstream apps; keep lab SOURCE) ---
+tests/lab/runtime/
+
+# --- Node ---
+node_modules/
