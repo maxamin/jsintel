@@ -5,8 +5,11 @@ crawler:
   javascript: true
 
 download:
-  timeout: 15
+  timeout: 15          # per-read-chunk socket timeout (seconds)
   retries: 3
+  max_seconds: 90      # hard wall-clock ceiling per asset; guards against streaming
+                       # endpoints (SSE/long-poll) that would otherwise hang a worker
+  max_bytes: 26214400  # hard size ceiling per asset (25 MiB)
 
 database:
   path: output/database/recon.db
