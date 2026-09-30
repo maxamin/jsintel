@@ -1652,3 +1652,24 @@ Per the operator exchange, the active form-submitter/XHR-trigger was NOT run aga
 live gala.com under an authenticated session (irreversible third-party side effects;
 no gala session is held here and SSO-login-as-the-user was declined). Ready-to-run
 gala commands are handed to the operator to run with their own `--cookie`/`--jwt`.
+
+## MILESTONE — labs-index discovery target + port-scan robustness (2026-09-30)
+
+- `tests/lab/labs_index.py` — spawns a "labs index" HTTP service on a RANDOM FREE port
+  in [80, 10443] that links at least once to EVERY lab (5 web-app labs + the blockchain
+  labs from `~/blockchain-security-labs/ports.json`); CLI/Foundry labs with no HTTP
+  service get a same-host `/lab/<name>` stub. Purpose: a discovery target that JSIntel's
+  port scanner must sweep 80-10443 to find, after which the crawler mines every lab link.
+- **portscan bugfix**: `_http_probe` didn't catch `http.client.HTTPException`, so a
+  non-HTTP service answering the probe with a non-HTTP status line (VNC's "RFB 003.008"
+  on 5901, SSH, DB banners) raised `BadStatusLine` uncaught and ABORTED the whole scan —
+  exactly what a wide 80-10443 sweep triggers. Now caught (+ a final best-effort guard);
+  the scan of 80-10443 completes and finds the index port. Verified live: scan of
+  127.0.0.1 over 80-10443 discovered the index and emitted it to `services.txt`.
+- `test.md` — an ultra-aggressive testing prompt (full-range discovery, unauth + auth
+  cookie/JWT passes, proxychains, coverage-to-every-line, safety assertions).
+- Tests (+11): `tests/test_labs_index.py` — lab discovery/merge/dedupe, index+stub HTML
+  links every lab, free-port picking (in-range/bindable/avoids-used), served-index
+  integration, and the port-scan robustness regression (non-HTTP service must not crash).
+
+**Suite: 547 → 558 passed (+11).**

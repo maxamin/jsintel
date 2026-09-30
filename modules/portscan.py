@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import hashlib
+import http.client
 import json
 import logging
 import re
@@ -302,7 +303,13 @@ def _try_scheme(host: str, port: int, scheme: str, *, timeout: float) -> dict | 
         if error.code == 400 and b"HTTPS port" in body:
             return None
         return _service_record(host, port, scheme, error.code, dict(error.headers or {}), body, url, url)
-    except (urllib.error.URLError, ssl.SSLError, TimeoutError, OSError, ValueError):
+    except (urllib.error.URLError, ssl.SSLError, TimeoutError, OSError, ValueError,
+            http.client.HTTPException):
+        # http.client.HTTPException covers a non-HTTP service answering the probe with
+        # a non-HTTP status line (e.g. VNC's "RFB 003.008", SSH, a DB banner). Scanning
+        # a wide port range routinely hits these; a bad probe must never abort the scan.
+        return None
+    except Exception:  # noqa: BLE001 - a network probe of an arbitrary port is best-effort
         return None
 
 
