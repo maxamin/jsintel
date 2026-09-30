@@ -649,6 +649,8 @@ class CaptureStore:
         self.last_result: dict | None = None
         self.fuzz = False               # opt-in active content-discovery (set by registry)
         self.fuzz_args: list[str] = []  # extra args passed straight to modules.fuzzer
+        self.forms = False              # opt-in active form filler / AJAX-spider stage
+        self.forms_args: list[str] = []  # extra args passed straight to modules.forms.main
         self.aggressive = False         # opt-in flow-dedup ledger + raw recording tree
         self.chromium = ""              # chromium binary for offline response screenshots
         self.anomaly_normalize = True   # mask volatile noise before anomaly comparison
@@ -844,6 +846,10 @@ class CaptureStore:
         #     seen in the captured traffic and seeded by the endpoints/URLs just mined.
         #     Runs before DB ingest so fuzz hits fold into the DB/reports/triage.
         fuzz_summary = self._run_fuzzer([a["url"] for a in assets] + list(headers)) if self.fuzz else None
+        # 2c') OPT-IN active form stage: fill + trigger forms on the captured HTML pages,
+        #      scoped to the captured hosts. Active (sends live requests); like --fuzz it
+        #      is off unless the operator passes --forms.
+        forms_summary = self._run_forms(assets) if self.forms else None
         # 2d) Aggressive mode: render queued page-response screenshots offline (not under
         #     the ingest lock) and surface the flow-ledger stats.
         flow_stats = None
@@ -858,6 +864,8 @@ class CaptureStore:
                   "captures": self._n, "security_findings": len(sec), "triage": triage_result}
         if fuzz_summary is not None:
             result["fuzz"] = fuzz_summary
+        if forms_summary is not None:
+            result["forms"] = forms_summary
         if flow_stats is not None:
             result["flows"] = flow_stats
         self.last_result = result
@@ -893,6 +901,53 @@ class CaptureStore:
                 pass
         return summary
 
+    def _run_forms(self, assets) -> dict:
+        """Fill + trigger forms on the captured HTML pages, scoped to captured hosts.
+
+        Active (submits and, with --browser, drives Chromium). Reads the already-
+        captured page bodies rather than re-fetching, and constrains scope to the
+        hostnames actually seen in traffic. A failure never aborts the capture
+        pipeline.
+        """
+        from urllib.parse import urlsplit as _split
+        pages: list[tuple[str, str]] = []
+        for a in assets:
+            if a.get("type") not in ("page", "other"):
+                continue
+            lp = a.get("local_path")
+            if not lp:
+                continue
+            try:
+                html = Path(lp).read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            if "<form" in html.lower() or "<input" in html.lower():
+                pages.append((a.get("url", ""), html))
+        if not pages:
+            return {"ran": False, "reason": "no HTML pages with forms in capture"}
+        hosts = sorted({h for h in (_split(u).hostname for u, _ in pages) if h})
+        argv = ["--output", str(self.output)]
+        for h in hosts:
+            argv += ["--scope", h]
+        argv += self.forms_args
+        try:
+            from modules.forms.main import build_parser, run
+            from modules.authutil import auth_headers
+            from modules.forms.driver import find_chromium
+            a = build_parser().parse_args(argv)
+            chromium = find_chromium(a.chromium) if a.browser else ""
+            report = run(pages, submit=not a.no_submit, use_browser=bool(chromium),
+                         headers=auth_headers(), chromium=chromium, seed=a.seed,
+                         extra_denylist=a.deny, timeout=a.timeout,
+                         apply_guard=not a.no_safe_denylist, settle=a.settle)
+        except Exception as ex:  # a form-stage failure must never abort the pipeline
+            return {"ran": False, "scope": hosts, "error": str(ex)}
+        (self.output / "reports" / "forms.json").write_text(json.dumps(report, indent=2) + "\n")
+        return {"ran": True, "scope": hosts,
+                "forms_found": report["forms_found"],
+                "forms_submitted": report["forms_submitted"],
+                "discovered_endpoints": len(report["discovered_endpoints"])}
+
     def status(self) -> dict:
         with self._lock:
             return {"captures": self._n, "unique_assets": len(self._assets),
@@ -918,13 +973,16 @@ class SiteRegistry:
     def __init__(self, output: Path, config: Path, group: str = "regdom",
                  debounce: float = 2.0, max_concurrent: int = 2,
                  fuzz: bool = False, fuzz_args: list[str] | None = None,
-                 aggressive: bool = False, chromium: str = "", anomaly_normalize: bool = True):
+                 aggressive: bool = False, chromium: str = "", anomaly_normalize: bool = True,
+                 forms: bool = False, forms_args: list[str] | None = None):
         self.output = output
         self.config = config
         self.group = group
         self.debounce = max(0.0, debounce)
         self.fuzz = fuzz
         self.fuzz_args = list(fuzz_args or [])
+        self.forms = forms
+        self.forms_args = list(forms_args or [])
         self.aggressive = aggressive
         self.chromium = chromium
         self.anomaly_normalize = anomaly_normalize
@@ -953,6 +1011,8 @@ class SiteRegistry:
                 st.site = key
                 st.fuzz = self.fuzz
                 st.fuzz_args = self.fuzz_args
+                st.forms = self.forms
+                st.forms_args = self.forms_args
                 st.aggressive = self.aggressive
                 st.chromium = self.chromium
                 st.anomaly_normalize = self.anomaly_normalize
@@ -1181,17 +1241,22 @@ def _make_handler(target, token: str | None):
 def serve(output: Path, config: Path, host: str, port: int, token: str | None,
           group: str = "regdom", debounce: float = 2.0, max_concurrent: int = 2,
           fuzz: bool = False, fuzz_args: list[str] | None = None,
-          aggressive: bool = False, chromium: str = "", anomaly_normalize: bool = True) -> None:
+          aggressive: bool = False, chromium: str = "", anomaly_normalize: bool = True,
+          forms: bool = False, forms_args: list[str] | None = None) -> None:
     registry = SiteRegistry(output, config, group=group, debounce=debounce,
                             max_concurrent=max_concurrent, fuzz=fuzz, fuzz_args=fuzz_args,
                             aggressive=aggressive, chromium=chromium,
-                            anomaly_normalize=anomaly_normalize)
+                            anomaly_normalize=anomaly_normalize,
+                            forms=forms, forms_args=forms_args)
     httpd = ThreadingHTTPServer((host, port), _make_handler(registry, token))
     print(f"JSIntel listener on http://{host}:{port}  (output={output}, auth={'on' if token else 'off'})", flush=True)
     print(f"  grouping={group} (one dir + one coalesced scan per site), debounce={debounce}s, "
           f"max_concurrent={max_concurrent}", flush=True)
     if fuzz:
         print(f"  ACTIVE fuzzing ON (scoped to captured hosts only); fuzz_args={fuzz_args or []}", flush=True)
+    if forms:
+        print(f"  ACTIVE form stage ON (fill+trigger on captured pages, scoped to captured "
+              f"hosts); forms_args={forms_args or []}", flush=True)
     if aggressive:
         print(f"  AGGRESSIVE ON: per-flow dedup + raw request/response recording under "
               f"assets/flows/ (screenshots={'on' if chromium else 'off (no chromium)'})", flush=True)
@@ -1224,6 +1289,16 @@ def main(argv=None) -> int:
     p.add_argument("--fuzz-arg", action="append", default=[], dest="fuzz_args",
                    help="extra arg passed straight to modules.fuzzer (repeatable), "
                         "e.g. --fuzz-arg=--dry-run --fuzz-arg=--offline")
+    p.add_argument("--forms", action="store_true",
+                   help="OPT-IN active form stage: after a site's scan, fill + trigger the "
+                        "forms on its captured HTML pages (scoped to the captured hosts). "
+                        "Sends live traffic; submits by default with the destructive guard.")
+    p.add_argument("--forms-arg", action="append", default=[], dest="forms_args",
+                   help="extra arg passed straight to modules.forms.main (repeatable), "
+                        "e.g. --forms-arg=--no-submit --forms-arg=--browser")
+    p.add_argument("--proxychains", nargs="?", const="1", default=None,
+                   help="route the listener's outbound traffic (fuzzer, form stage, Chromium) "
+                        "through proxychains4 by re-exec'ing under it (optional config path)")
     p.add_argument("--aggressive", action="store_true",
                    help="record each distinct request/response flow (dedup by method+URL+body+"
                         "auth headers) under assets/flows/ with a screenshot; log response-hash "
@@ -1234,6 +1309,11 @@ def main(argv=None) -> int:
                    help="compare raw response bytes for anomalies (default: mask volatile "
                         "CSRF tokens/nonces/session ids/timestamps first, to avoid false anomalies).")
     a = p.parse_args(argv)
+    # Re-exec under proxychains first (guarded) so the daemon's active stages — the
+    # in-process fuzzer, the form stage's requests, and any Chromium it spawns — all
+    # inherit the proxy chain. No-op when already wrapped or proxychains is absent.
+    from modules.proxyutil import maybe_reexec_proxychains
+    maybe_reexec_proxychains(a.proxychains)
     chromium = ""
     if a.aggressive:
         from modules.webshot import find_chromium
@@ -1241,7 +1321,7 @@ def main(argv=None) -> int:
     serve(a.output, a.config, a.host, a.port, a.token,
           group=a.group, debounce=a.debounce, max_concurrent=a.max_concurrent,
           fuzz=a.fuzz, fuzz_args=a.fuzz_args, aggressive=a.aggressive, chromium=chromium,
-          anomaly_normalize=not a.anomaly_raw)
+          anomaly_normalize=not a.anomaly_raw, forms=a.forms, forms_args=a.forms_args)
     return 0
 
 

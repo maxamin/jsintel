@@ -48,6 +48,16 @@ Usage: ./jsintel.sh -i <input_urls> [-o <output_dir>] [-t <threads>] [-s <scope>
       stages (crawl, download, fuzz, live-service analysis).
   --jwt <token>     Send "Authorization: Bearer <token>" with every request. May be
       combined with --cookie. The session is only ever sent to in-scope hosts.
+  --forms           Run the ACTIVE form stage after extraction: discover forms on the
+      crawled pages, fill every field with realistic, spec-valid random data (so
+      client/server validation does not reject it) and trigger their JavaScript and
+      XHR/fetch calls (ZAP AJAX-Spider / Form-Handler style). Submits by default with
+      a destructive-endpoint guard (payment/swap/withdraw/delete/logout are skipped).
+      Extra options via JSINTEL_FORMS_ARGS (e.g. "--no-submit", "--browser",
+      "--deny <term>", "--no-safe-denylist"). Sends live requests -> scope-gated.
+  --proxychains [conf]  Route ALL outbound traffic (crawl, download, fuzz, forms and
+      headless Chromium) through proxychains4 by re-exec'ing the run under it. With no
+      value the default proxychains config is used; pass a path to use a specific one.
 EOF
 }
 
@@ -55,17 +65,39 @@ EOF
 # getopts handles only single-char flags, so extract these (and their values) into
 # env vars that every request-making stage (crawl, download, fuzz, live analysis)
 # reads via modules/authutil.py. The session is only ever sent to in-scope hosts.
-_pre=(); while [[ $# -gt 0 ]]; do
+_pre=(); FORMS="${FORMS:-0}"; PROXYCHAINS=""; while [[ $# -gt 0 ]]; do
   case "$1" in
     --cookie)   export JSINTEL_AUTH_COOKIE="${2:-}"; shift 2 ;;
     --cookie=*) export JSINTEL_AUTH_COOKIE="${1#*=}"; shift ;;
     --jwt)      export JSINTEL_AUTH_BEARER="${2:-}"; shift 2 ;;
     --jwt=*)    export JSINTEL_AUTH_BEARER="${1#*=}"; shift ;;
+    # --proxychains [conf] routes ALL outbound traffic (crawl/download/fuzz/forms/
+    # chromium) through proxychains by re-exec'ing the whole run under proxychains4;
+    # every child process then inherits the proxy. Optional value is a config path.
+    --proxychains)   if [[ -n "${2:-}" && "${2:0:1}" != "-" ]]; then PROXYCHAINS="$2"; shift 2; else PROXYCHAINS="1"; shift; fi ;;
+    --proxychains=*) PROXYCHAINS="${1#*=}"; shift ;;
+    # --forms runs the active form-filler / AJAX-spider stage after extraction
+    # (submit-by-default; extra args via JSINTEL_FORMS_ARGS).
+    --forms)    FORMS=1; shift ;;
     --)         shift; while [[ $# -gt 0 ]]; do _pre+=("$1"); shift; done ;;
     *)          _pre+=("$1"); shift ;;
   esac
 done
 set -- ${_pre[@]+"${_pre[@]}"}
+
+# Re-exec the entire run under proxychains once (guarded), so katana, curl, the
+# downloader, the fuzzer, the form stage and headless Chromium all speak through the
+# proxy chain. proxychains preloads its shim at process launch, so wrapping the whole
+# script is the reliable way to cover in-process and child-process sockets alike.
+if [[ -n "$PROXYCHAINS" && -z "${JSINTEL_UNDER_PROXYCHAINS:-}" ]]; then
+  if command -v proxychains4 >/dev/null 2>&1; then PCBIN=proxychains4
+  elif command -v proxychains >/dev/null 2>&1; then PCBIN=proxychains
+  else die "--proxychains requested but proxychains4 is not installed"; fi
+  PCARGS=(-q); [[ "$PROXYCHAINS" != "1" && "$PROXYCHAINS" != "default" ]] && PCARGS+=(-f "$PROXYCHAINS")
+  export JSINTEL_UNDER_PROXYCHAINS=1 FORMS
+  exec "$PCBIN" "${PCARGS[@]}" bash "$BASE_DIR/jsintel.sh" ${_pre[@]+"${_pre[@]}"}
+fi
+export FORMS
 
 INPUT=""; OUTPUT_DIR="$BASE_DIR/output"; THREADS=""; FUZZ_SCOPE=""; SUB_SCOPE=""; PORT_SCOPE=""; WEBSHOT=0
 MASS_TARGETS=""; MASS_SUBS=0; MASS_PORTS=0; MASS_FUZZ=0; MASS_WEBSHOT=0; VERBOSE=0
@@ -189,6 +221,22 @@ if [[ "$WEBSHOT" == "1" ]]; then
 fi
 if [[ -n "$FUZZ_SCOPE" ]]; then
   bash "$BASE_DIR/modules/fuzzer.sh" "$FUZZ_SCOPE"
+fi
+# Active form stage (opt-in via --forms): fill discovered pages' forms with in-norm
+# synthetic data and trigger their JS/XHR. Scoped to the authorized scope; submit-by-
+# default with the destructive-endpoint guard. Extra args via JSINTEL_FORMS_ARGS
+# (e.g. "--no-submit", "--browser", "--no-safe-denylist"). Runs before DB ingest so
+# any endpoints it discovers fold into the reports/triage.
+if [[ "$FORMS" == "1" ]]; then
+  FORMS_SCOPE="${FUZZ_SCOPE:-${SUB_SCOPE:-$PORT_SCOPE}}"
+  FORM_ARGS=(--output "$OUTPUT_DIR")
+  # shellcheck disable=SC2206
+  _fs=(${FORMS_SCOPE//,/ }); for _s in "${_fs[@]}"; do [[ -n "$_s" ]] && FORM_ARGS+=(--scope "$_s"); done
+  # shellcheck disable=SC2206
+  FORM_ARGS+=(${JSINTEL_FORMS_ARGS:-})
+  log_info "Active form stage (fill + trigger JS/XHR; scope: ${FORMS_SCOPE:-<pages in output>})"
+  PYTHONPATH="$BASE_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m modules.forms.main "${FORM_ARGS[@]}" \
+    2>&1 | tee -a "$LOG_FILE" || log_info "Form stage skipped (non-fatal)"
 fi
 python3 "$BASE_DIR/modules/database.py" --output "$OUTPUT_DIR" --config "$CONFIG" ingest
 python3 "$BASE_DIR/modules/reporter.py" --output "$OUTPUT_DIR" --config "$CONFIG"

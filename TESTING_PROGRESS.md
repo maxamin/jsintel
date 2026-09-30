@@ -1560,3 +1560,95 @@ sweep). All new tests are hermetic (no network, chromium, or live labs).
   malformed 'URL-like' junk (unterminated IPv6, regex fragments).
 
 **Suite: 435 → 454 passed (+19).**
+
+## BUGFIX — download stage hung forever on streaming endpoints (2026-09-30)
+
+**Symptom (from `output_gala_live/logs/jsintel.log`).** The authenticated gala.com
+run of 2026-09-28T00:00Z logged "Classified 1558 assets" and then produced nothing
+for 2+ days — no "Download manifest updated", no extraction, no completion. Every
+item in `reports/assets.json` still had no `status`, so the download stage never
+returned. Earlier unauthenticated runs completed because they queued far fewer
+API/monitor roots.
+
+**Root cause.** `modules/downloader.sh` fetched every classified item (1558 here,
+of which 848 were `page` URLs including API/monitor roots such as
+`heartbeat-api.node.gala.com/`, `bridge-monitor-prod.gala.com/`,
+`brain-api.gala.com/`). It streamed each with `requests` and only a
+`timeout=(5, 15)` tuple — a per-read-chunk socket timeout, not a total cap. An
+endpoint that trickles bytes forever (SSE / long-poll / chunked keep-alive)
+delivers a byte before each read timeout, so the timeout never fires and
+`iter_content(65536)` buffers indefinitely; the worker thread blocks forever. Since
+`concurrent.futures.as_completed(futures)` waits on *all* workers, a single hung
+endpoint wedged the entire pipeline.
+
+**Fix.**
+- Added hard per-asset ceilings: `download.max_seconds` (wall-clock, default 90s)
+  and `download.max_bytes` (default 25 MiB), both in `config/config.yaml`.
+- Replaced `iter_content(65536)` with a `r.raw.read1(65536, decode_content=True)`
+  loop. `read1` performs one socket read per call and returns whatever bytes are
+  already available (still gzip/deflate-decoded), so control returns after every
+  recv and the time/size checks actually fire — even against a byte-trickling
+  endpoint. (An earlier watchdog-`close()` attempt failed: closing an fd does not
+  unblock another thread already in `recv()` on Linux.)
+- Broadened the exception guard to `urllib3.exceptions.HTTPError` (raw `read1`
+  raises urllib3 read-timeout/protocol errors that are not `requests.RequestException`).
+- Aborted downloads now delete their `.part` so a later resume cannot re-trigger an
+  unbounded stream.
+
+**Regression test.** `tests/test_downloader.py` runs `downloader.sh` against an
+in-process server exposing a normal gzip JS asset, an endless trickle, an oversized
+body, and a 404; asserts the stage finishes quickly, decodes the good asset,
+fails the stream on `max_seconds`, fails the oversized body on `max_bytes`, and
+leaves no `.part` files.
+
+**Suite: 454 → 455 passed (+1).**
+
+## MILESTONE — active form stage + proxychains argument (2026-09-30)
+
+Two features requested by the operator, built and fully lab-tested (no traffic sent
+to any third-party target from here; validated against local synthetic servers,
+headless Chromium, and the intended lab).
+
+### `modules/forms/` — active form filler / AJAX-spider (ZAP Form-Handler + AJAX-Spider analogue)
+- `parser.py` — stdlib HTML → forms/fields; handles `form=`-linked and orphan
+  controls, `<select>`/`<option>` (empty vs absent value), `<label for>` before or
+  after its control, and malformed markup without crashing.
+- `synth.py` — the "in-norm random data" brain. Generates spec-valid values honouring
+  `type`, `pattern` (ReDoS-safe bounded regex sampler), `min`/`max`/`step` (integer
+  default unless `step=any`), `minlength`/`maxlength`, `<option>` sets, and name/label
+  semantics. Seedable/deterministic. Verified: 0 rejections across many seeds against
+  a strict validating server.
+- `engine.py` — static `requests`-based submitter (GET/POST/multipart); auth-aware;
+  radio one-per-group; required checkboxes checked; hidden CSRF values preserved.
+- `driver.py` — best-effort headless-Chromium CDP driver (minimal stdlib WebSocket
+  client, no Playwright/Selenium). Instruments XHR/fetch/WebSocket/sendBeacon (URLs
+  resolved to absolute), fills fields, dispatches input/change/submit/click so app JS
+  fires, and reads back the endpoints its JavaScript called. Gracefully skipped when
+  Chromium is absent.
+- `safety.py` — submit-by-default with an overridable destructive-endpoint guard
+  (payment/checkout/swap/DeFi/withdraw/delete/logout) and secret-masking for reports.
+- `main.py` — CLI; probes `--url`/`--urls-file`/reused `--output` pages; scope-gated;
+  feeds discovered endpoints back into `assets/crawled_urls.txt`; `--proxychains`.
+- Wired into `jsintel.sh` (`--forms`, `JSINTEL_FORMS_ARGS`) and the listener
+  (`--forms`/`--forms-arg`, active per captured site like `--fuzz`).
+
+### proxychains argument
+- `modules/proxyutil.py` — re-exec the process under `proxychains4` (guarded against
+  loops; warns + continues if not installed) so in-process and child-process sockets
+  all route through the proxy chain.
+- `--proxychains [conf]` added to `jsintel.sh`, `modules.listener`, and
+  `modules.forms.main`. The listener case was the operator's specific ask.
+
+### Tests (+91): `tests/test_forms.py`, `test_forms_driver.py`, `test_forms_main.py`,
+`test_proxyutil.py` — parser shapes incl. probable/edge cases, synth validity +
+determinism + ReDoS safety, safety guard, static engine against a strict validating
+server, CDP builders + Chromium-gated XHR capture, main + listener integration,
+proxychains re-exec via a fake binary.
+
+**Suite: 455 → 546 passed (+91).**
+
+### NOT executed from here
+Per the operator exchange, the active form-submitter/XHR-trigger was NOT run against
+live gala.com under an authenticated session (irreversible third-party side effects;
+no gala session is held here and SSO-login-as-the-user was declined). Ready-to-run
+gala commands are handed to the operator to run with their own `--cookie`/`--jwt`.
