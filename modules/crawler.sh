@@ -25,7 +25,10 @@ if [[ -f "$INPUT" ]]; then grep -E '^https?://' "$INPUT" | sed 's/\r$//' > "$RAW
 # it; CRAWL_SCOPE=off disables filtering; otherwise the scope is derived from the
 # (post-redirect) seed hosts. This is a security control: an authorized gala.com
 # test must not start crawling okta.com just because a gala.com host redirects there.
-reg_dom() { awk -F. '{n=NF; if(n>=2) print tolower($(n-1)"."$n); else print tolower($0)}'; }
+# eTLD+1 heuristic for domains; IP literals (v4/v6) are passed through unchanged so
+# an IP target is scoped to the exact address, never a bogus "registered domain"
+# (e.g. 127.0.0.9 must scope to 127.0.0.9, not 0.9 -- which would admit any x.0.9).
+reg_dom() { awk -F. '{h=tolower($0); if(h ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ || h ~ /:/){print h; next} n=NF; if(n>=2) print tolower($(n-1)"."$n); else print h}'; }
 SCOPE_DOMS=$(mktemp); trap 'rm -f "$RAWSEEDS" "$SEEDS" "$SCOPE_DOMS"' EXIT
 ANCHORED=0
 if [[ "${CRAWL_SCOPE:-}" == "off" ]]; then

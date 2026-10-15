@@ -1673,3 +1673,26 @@ gala commands are handed to the operator to run with their own `--cookie`/`--jwt
   integration, and the port-scan robustness regression (non-HTTP service must not crash).
 
 **Suite: 547 → 558 passed (+11).**
+
+---
+
+## Lab test pass — crawler scope for IP targets (2026-09-30)
+
+Ran the pipeline end to end against the local labs (React Vuln SPA `127.0.0.9:8091`).
+Core crawl → classify → download → extract → triage works: the source map
+`app.min.js.map` was parsed and hardcoded AWS/Stripe secrets recovered (host triaged
+at risk 168, 4 high findings, 8 endpoints).
+
+- **scope bugfix (`modules/crawler.sh` `reg_dom`)**: the eTLD+1 heuristic
+  `$(n-1).$(n)` was applied to *everything*, so an IP seed `127.0.0.9` produced the
+  bogus "registered domain" `0.9`. `host_in_scope` matches on dotted suffixes, so any
+  unrelated host ending `.0.9` (e.g. `10.20.0.9`) would have been admitted as in-scope
+  — a scope-safety violation for IP targets. `reg_dom` now passes IPv4/IPv6 literals
+  through unchanged, scoping an IP target to the exact address. Verified live: the
+  crawl-scope line now reads `127.0.0.9`, not `0.9`.
+- Tests (+10): `tests/test_crawler_scope.py` — extracts the real `reg_dom()` from
+  `crawler.sh` and evaluates it in bash: IPv4/IPv6 pass-through, domain eTLD+1
+  collapse, single-label host, and the regression assertions (IP never collapses to
+  octets; two IPs sharing the last two octets get different scope keys).
+
+**Suite: 558 → 568 passed (+10).**
