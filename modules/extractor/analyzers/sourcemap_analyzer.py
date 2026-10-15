@@ -20,6 +20,7 @@ from typing import Any
 from ..analyzer import Analyzer
 from ..findings import EndpointFinding, Finding, SecurityFinding, URLFinding
 from ..models import Asset
+from ._urlutil import is_plausible_url
 
 _URL_RE = re.compile(r"""(?:https?:)?//[^\s"'`<>\\)]+""")
 _MAX_CONTENT = 1_000_000  # cap per-source re-scan to keep huge maps bounded
@@ -79,7 +80,7 @@ class SourceMapAnalyzer(Analyzer):
 
             seen_u: set[str] = set()
             for u in _URL_RE.findall(content):
-                if u not in seen_u:
+                if u not in seen_u and is_plausible_url(u):
                     seen_u.add(u)
                     yield URLFinding(asset_url=asset.url, url=u)
             seen_e: set[str] = set()

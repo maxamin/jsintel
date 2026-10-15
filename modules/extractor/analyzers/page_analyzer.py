@@ -23,6 +23,7 @@ from collections.abc import Iterable
 from ..analyzer import Analyzer
 from ..findings import EndpointFinding, Finding, SecurityFinding, URLFinding
 from ..models import Asset
+from ._urlutil import is_plausible_url
 
 # Attribute targets: href/src/action/formaction/data-url = "...".
 _ATTR_RE = re.compile(r"""\b(?:href|src|action|formaction|data-url|data-href)\s*=\s*["']([^"'<>\s]+)["']""", re.I)
@@ -105,7 +106,7 @@ class PageAnalyzer(Analyzer):
             urls.update(self._capped(_URL_RE.findall(hay)))
             endpoints.update(self._capped(_PATH_RE.findall(hay)))
 
-        for u in sorted(urls)[:_CAP]:
+        for u in sorted(u for u in urls if is_plausible_url(u))[:_CAP]:
             yield URLFinding(asset_url=asset.url, url=u)
         for ep in sorted(endpoints)[:_CAP]:
             kind = "api" if _PATH_RE.match(ep) else "link"

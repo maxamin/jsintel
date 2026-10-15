@@ -9,8 +9,9 @@ from ..ast_analyzer import ASTAnalyzer
 from ..ast_utils import _extract_string_literals, _find_nodes, _get_first_string_arg
 from ..findings import Finding, URLFinding
 from ..models import Asset
+from ._urlutil import is_plausible_url
 
-_URL_RE = re.compile(r'''(?:(?:https?:)?//[^\s"'`<>\\]+)''')
+_URL_RE = re.compile(r'''(?:(?:https?:)?//[^\s"'`<>\\)]+)''')
 _HTTP_CLIENTS = {"fetch", "XMLHttpRequest", "WebSocket"}
 
 
@@ -30,4 +31,5 @@ class URLAnalyzer(ASTAnalyzer):
         else:
             candidates.update(_URL_RE.findall(source))
         for value in sorted(candidates):
-            yield URLFinding(asset_url=asset.url, url=value)
+            if is_plausible_url(value):
+                yield URLFinding(asset_url=asset.url, url=value)
