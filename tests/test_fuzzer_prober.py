@@ -145,3 +145,84 @@ def test_calibration_can_be_disabled():
     prober.probe_all([_candidate("https://a.example.test/admin")])
     # No calibration probe was sent -- only the candidate itself.
     assert all("jsintel-" not in url for url in transport.calls)
+
+
+# --- repeated-response suppression (2026-10-09 sweep regressions) -------------
+class _SequenceTransport(FakeTransport):
+    """Baseline probe gets a clean 404; candidates get ``responder(url)``."""
+
+    def __init__(self, responder):
+        super().__init__({})
+        self.responder = responder
+
+    def fetch(self, url, method, timeout, headers, follow_redirects):
+        self.calls.append(url)
+        if "jsintel-" in url:
+            return Response(status=404, length=20, words=3)
+        return self.responder(url)
+
+
+def _words(n):
+    return [f"https://a.example.test/w{i:03d}x" for i in range(n)]
+
+
+def test_mid_scan_waf_challenge_with_drifting_length_is_suppressed():
+    # Calibration saw a 404, then a WAF began serving ~34 KB challenge 403s whose
+    # size drifts by a few bytes with the echoed path (observed: 164k bogus hits).
+    transport = _SequenceTransport(lambda url: Response(status=403, length=33970 + len(url) % 25, words=900))
+    prober = Prober(transport, Scope(["example.test"]), FuzzConfig(concurrency=1))
+    results = prober.probe_all([_candidate(u) for u in _words(40)])
+    assert not any(r.interesting for r in results)
+    assert {r.note for r in results} == {"repeated-response"}
+
+
+def test_catch_all_redirect_to_same_target_is_suppressed():
+    transport = _SequenceTransport(lambda url: Response(status=302, length=145, words=5, redirect="/login"))
+    prober = Prober(transport, Scope(["example.test"]), FuzzConfig(concurrency=1))
+    assert not any(r.interesting for r in prober.probe_all([_candidate(u) for u in _words(15)]))
+
+
+def test_redirect_echoing_the_word_is_one_shape():
+    transport = _SequenceTransport(lambda url: Response(
+        status=302, length=145, words=5, redirect="/auth?next=/" + url.rsplit("/", 1)[-1]))
+    prober = Prober(transport, Scope(["example.test"]), FuzzConfig(concurrency=1))
+    assert not any(r.interesting for r in prober.probe_all([_candidate(u) for u in _words(15)]))
+
+
+def test_slash_append_directory_redirects_are_kept():
+    transport = _SequenceTransport(lambda url: Response(status=301, length=169, words=5, redirect=url + "/"))
+    prober = Prober(transport, Scope(["example.test"]), FuzzConfig(concurrency=1))
+    assert all(r.interesting for r in prober.probe_all([_candidate(u) for u in _words(15)]))
+
+
+def test_few_genuine_hits_among_a_wall_survive():
+    def responder(url):
+        if url.endswith(("w001x", "w002x")):
+            return Response(status=200, length=4000 + len(url), words=600)
+        return Response(status=403, length=59, words=4)
+    prober = Prober(_SequenceTransport(responder), Scope(["example.test"]), FuzzConfig(concurrency=1))
+    interesting = [r.url for r in prober.probe_all([_candidate(u) for u in _words(30)]) if r.interesting]
+    assert interesting == ["https://a.example.test/w001x", "https://a.example.test/w002x"]
+
+
+def test_below_threshold_same_shape_is_kept():
+    # A handful of identical 403s (e.g. /.git/, /.env, /admin/ behind one deny rule)
+    # is below the repeat threshold and still reported.
+    transport = _SequenceTransport(lambda url: Response(status=403, length=153, words=8))
+    prober = Prober(transport, Scope(["example.test"]), FuzzConfig(concurrency=1))
+    assert all(r.interesting for r in prober.probe_all([_candidate(u) for u in _words(5)]))
+
+
+def test_repeat_grouping_is_per_host():
+    urls = [f"https://h{i}.example.test/x" for i in range(12)]
+    transport = _SequenceTransport(lambda url: Response(status=403, length=59, words=4))
+    prober = Prober(transport, Scope(["example.test"]), FuzzConfig(concurrency=1))
+    assert all(r.interesting for r in prober.probe_all([_candidate(u) for u in urls]))
+
+
+def test_case_normalising_redirects_are_one_shape():
+    transport = _SequenceTransport(lambda url: Response(
+        status=307, length=193100, words=5, redirect="/portal/" + url.rsplit("/", 1)[-1].lower()))
+    urls = [f"https://a.example.test/portal/WORD{i:02d}" for i in range(12)]
+    prober = Prober(transport, Scope(["example.test"]), FuzzConfig(concurrency=1))
+    assert not any(r.interesting for r in prober.probe_all([_candidate(u) for u in urls]))

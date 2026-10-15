@@ -22,10 +22,12 @@ _MAX = 2_000_000  # cap scanned text (ReDoS/extreme-input safety)
 # Each: (compiled pattern, provider label). Patterns are linear (no nested quantifiers).
 _PATTERNS = [
     (re.compile(r"\b[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]\.s3(?:[.\-][a-z0-9\-]+)?\.amazonaws\.com", re.I), "aws-s3"),
-    (re.compile(r"\bs3(?:[.\-][a-z0-9\-]+)?\.amazonaws\.com/[A-Za-z0-9._\-][A-Za-z0-9._\-/]{1,120}", re.I), "aws-s3"),
+    # Path-style hosts must begin the hostname: inside ``bucket.s3.amazonaws.com/key``
+    # the ``.`` satisfies ``\b`` and the object key would be reported as a bucket.
+    (re.compile(r"(?<![\w.\-])s3(?:[.\-][a-z0-9\-]+)?\.amazonaws\.com/[A-Za-z0-9._\-][A-Za-z0-9._\-/]{1,120}", re.I), "aws-s3"),
     (re.compile(r"\bs3://[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9](?:/[^\s\"'`<>]{0,120})?", re.I), "aws-s3"),
     (re.compile(r"\b[a-z0-9\-_.]{1,80}\.storage\.googleapis\.com", re.I), "gcs"),
-    (re.compile(r"\bstorage\.googleapis\.com/[A-Za-z0-9._\-][A-Za-z0-9._\-/]{1,120}", re.I), "gcs"),
+    (re.compile(r"(?<![\w.\-])storage\.googleapis\.com/[A-Za-z0-9._\-][A-Za-z0-9._\-/]{1,120}", re.I), "gcs"),
     (re.compile(r"\bgs://[a-z0-9][a-z0-9.\-_]{1,80}(?:/[^\s\"'`<>]{0,120})?", re.I), "gcs"),
     (re.compile(r"\b[a-z0-9]{3,40}\.blob\.core\.windows\.net(?:/[^\s\"'`<>]{0,120})?", re.I), "azure-blob"),
     (re.compile(r"\b[a-z0-9\-_.]{1,80}\.[a-z0-9\-]{1,20}\.digitaloceanspaces\.com", re.I), "do-spaces"),

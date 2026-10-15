@@ -41,8 +41,21 @@ _HIGH_CATEGORIES = {"Cloud", "Source / CI", "Payments"}
 # is safe -- and clearer -- to show it unmasked.
 _MARKER_LABELS = {"private-key-block", "gcp-service-account-key"}
 
+# Identifiers that are public by design (shipped to every browser); reported for
+# environment fingerprinting only, never as a leaked credential.
+_PUBLIC_LABELS = {"stripe-publishable-key", "google-oauth-client-id", "braintree-tokenization-key"}
+
+
+# Browser keys that must ship to the client (Firebase web config, Maps JS); they are
+# only abusable when left without API/referrer restrictions, which needs a manual check.
+_CLIENT_KEY_LABELS = {"google-api-key"}
+
 
 def _severity_for(entry: dict[str, Any]) -> str:
+    if entry["id"] in _PUBLIC_LABELS:
+        return "info"
+    if entry["id"] in _CLIENT_KEY_LABELS:
+        return "low"
     if entry["id"] == "jwt":
         return "low"
     if entry["id"] in _MARKER_LABELS:
@@ -50,6 +63,12 @@ def _severity_for(entry: dict[str, Any]) -> str:
     if entry.get("category") in _HIGH_CATEGORIES:
         return "high"
     return "medium"
+
+
+_KEYWORD_LABELS: set[str] = set()
+# Labels whose match is a bare token (fixed prefix or keyword-gated body), as
+# opposed to structural markers/URLs; these get the blob-slice checks below.
+_TOKEN_LABELS: set[str] = set()
 
 
 def _load_patterns() -> list[tuple[re.Pattern[str], str, str, int]]:
@@ -73,6 +92,10 @@ def _load_patterns() -> list[tuple[re.Pattern[str], str, str, int]]:
         except re.error:
             continue
         out.append((rx, entry["id"], _severity_for(entry), rx.groups))
+        if entry.get("strategy") == "keyword":
+            _KEYWORD_LABELS.add(entry["id"])
+        if entry.get("strategy") in ("keyword", "prefix"):
+            _TOKEN_LABELS.add(entry["id"])
     return out
 
 
@@ -256,6 +279,77 @@ def _shannon_entropy(text: str) -> float:
     return entropy
 
 
+def _token_from(match: re.Match[str], group: int, name: str, text: str) -> str | None:
+    """The secret a pattern matched, or None when the match is not a real token.
+
+    Keyword-gated patterns (``aws...``, ``cloudflare...``) have no fixed prefix, so
+    their fixed-length body also matches a slice of any longer alphanumeric run
+    that follows the keyword: an identifier (``awsRegionResolver...``), a word
+    list (``...LawsuitLayerLazy...``) or a base64 blob. A genuine credential is a
+    standalone token, so the captured body must not be glued to further token
+    characters on either side, and must not be degenerate (``AAAA...``).
+
+    Open-ended prefix patterns (``EAA[0-9A-Za-z]{90,}``, ``IGQ...{100,}``) have the
+    same weakness inside base64 data (wasm segments, Flutter tables, inlined
+    fonts): the match stops at the first ``+``/``/`` while the blob carries on, and
+    binary padding yields long single-character runs no real token contains.
+    """
+    token = match.group(group) if group else match.group(0)
+    if token is None:
+        return match.group(0)
+    g = group if group else 0
+    start, end = match.start(g), match.end(g)
+    if name in _KEYWORD_LABELS and group:
+        if (start > 0 and text[start - 1].isalnum()) or (end < len(text) and text[end].isalnum()):
+            return None
+        if _shannon_entropy(token) < 3.0:
+            return None
+    if name in _TOKEN_LABELS:
+        if (end < len(text) and text[end] in "+/=") or (start > 0 and text[start - 1] in "+/"):
+            return None  # the match is one slice of a longer base64 run
+        if _REPEAT_RUN.search(token.lstrip("A")):  # leading A-run is twitter's real prefix
+            return None
+    if name == "credentials-in-url" and _PLACEHOLDER_CREDS.search(token):
+        return None
+    return token
+
+
+_REPEAT_RUN = re.compile(r"(.)\1{5}")
+# Documentation/sample credentials: placeholder passwords or reserved hosts.
+_PLACEHOLDER_CREDS = re.compile(
+    r":(?:password|passwd|pass|pwd|secret|changeme|xxx+|\*+|<[^>]*>|\$\{?\w+\}?)@"
+    r"|@(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|[\w.-]*example\.(?:com|org|net)|[\w.-]+\.(?:example|test|local|invalid))\b",
+    re.I,
+)
+
+
+# Shape of an opaque credential: no whitespace, template syntax, markup or path
+# separators-with-extensions. Tailwind classes (``w-[2px]``), CSS, i18n strings and
+# asset paths are high-entropy too but are not secrets.
+_TOKEN_SHAPE = re.compile(r"[A-Za-z0-9+/=_\-.~]{20,}")
+_ASSET_SUFFIX = re.compile(r"\.(?:svg|png|jpe?g|gif|webp|ico|css|js|json|html?|woff2?|ttf|mp4|map)$", re.I)
+
+
+def _looks_like_token(text: str) -> bool:
+    if not _TOKEN_SHAPE.fullmatch(text) or _ASSET_SUFFIX.search(text):
+        return False
+    if text.startswith(("/", ".", "-")) or "//" in text:
+        return False
+    return any(c.isdigit() for c in text) and any(c.isalpha() for c in text)
+
+
+# One quoted literal of each kind. Matching every literal (any length) and
+# filtering afterwards keeps the scan aligned: requiring a minimum length in the
+# regex lets a short literal's *closing* quote be taken as an opening one, so the
+# code between two literals (``" + awsKey + "``) was scanned as if it were a string.
+# Written as the "unrolled loop" (``[^q\\]*(?:\\.[^q\\]*)*``): the two branches start
+# on disjoint characters, so it is linear and ~10x faster than ``(?:[^q\\]|\\.)*`` on
+# an unterminated multi-megabyte literal.
+_QUOTED_LITERAL = re.compile(
+    r'"([^"\\\n]*(?:\\.[^"\\\n]*)*)"|\'([^\'\\\n]*(?:\\.[^\'\\\n]*)*)\'|`([^`\\]*(?:\\.[^`\\]*)*)`'
+)
+
+
 def _mask(value: str) -> str:
     if len(value) <= 12:
         return value[:2] + "..." + value[-2:] if len(value) > 4 else "****"
@@ -302,9 +396,9 @@ def scan_text(text: str, *, max_len: int = 2_000_000) -> list[tuple[str, str, st
     for i in candidates:
         pattern, name, severity, group, _anchors, _ci = _MATCHERS[i]
         for match in pattern.finditer(text):
-            token = match.group(group) if group else match.group(0)
+            token = _token_from(match, group, name, text)
             if token is None:
-                token = match.group(0)
+                continue
             shown = token if name in _MARKER_LABELS else _mask(token)
             found.setdefault(f"{name}: {shown}", (name, severity, shown))
     return list(found.values())
@@ -329,8 +423,8 @@ class SecretsAnalyzer(ASTAnalyzer):
                 literals.append((stripped, node))
         else:
             # Fallback: scan the whole source for quoted strings.
-            for match in re.finditer(r"['\"`]([^'\"`]{4,})['\"`]", source):
-                literals.append((match.group(1), None))
+            for match in _QUOTED_LITERAL.finditer(source):
+                literals.append((next(g for g in match.groups() if g is not None), None))
         for text, node in literals:
             if len(text) < 4:
                 continue
@@ -343,13 +437,13 @@ class SecretsAnalyzer(ASTAnalyzer):
             matched = False
             for _i in candidates:
                 pattern, name, severity, group, anchors, ci = _MATCHERS[_i]
-                match = pattern.search(text)
-                if match:
-                    # Keyword-gated patterns capture the secret in a group so the
-                    # surrounding keyword is not leaked into the report.
-                    token = match.group(group) if group else match.group(0)
-                    if token is None:
-                        token = match.group(0)
+                # Keyword-gated patterns capture the secret in a group so the
+                # surrounding keyword is not leaked into the report.
+                token = next(
+                    (t for m in pattern.finditer(text) if (t := _token_from(m, group, name, text)) is not None),
+                    None,
+                )
+                if token is not None:
                     # A structural *marker* (PEM header, service-account type)
                     # carries no key material, so it is safe -- and clearer -- to
                     # show unmasked; everything else is masked to a few chars.
@@ -369,7 +463,7 @@ class SecretsAnalyzer(ASTAnalyzer):
                 # High-entropy heuristic only near secret-like variable names.
                 # Check the cheap length gate BEFORE the O(len) entropy calc, so we
                 # never compute entropy for the many short literals that can't qualify.
-                if len(text) >= 20 and _shannon_entropy(text) >= 4.5:
+                if len(text) >= 20 and _looks_like_token(text) and _shannon_entropy(text) >= 4.5:
                     context = _context_for_node(node, source_bytes) if node else ""
                     if _SECRET_LIKE_NAMES.search(context):
                         value = f"high_entropy_secret: {_mask(text)}"

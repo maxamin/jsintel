@@ -18,6 +18,7 @@ regex fallback now also covers ``page`` assets), so this layer does not duplicat
 from __future__ import annotations
 
 import re
+from urllib.parse import urlsplit
 from collections.abc import Iterable
 
 from ..analyzer import Analyzer
@@ -75,6 +76,32 @@ def _risky_params(target: str) -> list[str]:
     return [p for p in _QS_PARAM_RE.findall(target) if _RISKY_PARAM.match(p)]
 
 
+# Second-level labels under which registrations sit one level deeper (example.co.uk).
+_SLD_UNDER_CC = {"co", "com", "net", "org", "gov", "ac", "edu", "ne", "or"}
+
+
+def _site(host: str) -> str:
+    labels = host.lower().rstrip(".").split(".")
+    keep = 3 if len(labels) >= 3 and labels[-2] in _SLD_UNDER_CC and len(labels[-1]) == 2 else 2
+    return ".".join(labels[-keep:])
+
+
+def _same_site(target: str, asset_url: str) -> bool:
+    """True for relative targets and absolute ones on the asset's own site.
+
+    A risky-named parameter on a third-party link (``googletagmanager.com/gtag/js?id=``,
+    ``x.com/intent?url=``) is not part of the assessed application's attack surface.
+    """
+    if not _is_absolute(target):
+        return True
+    try:
+        host = urlsplit("https:" + target if target.startswith("//") else target).hostname or ""
+        asset_host = urlsplit(asset_url).hostname or ""
+    except ValueError:  # malformed authority, e.g. an unbalanced IPv6 bracket
+        return False
+    return bool(host) and bool(asset_host) and _site(host) == _site(asset_host)
+
+
 def _is_absolute(u: str) -> bool:
     return u.startswith("http://") or u.startswith("https://") or u.startswith("//")
 
@@ -116,6 +143,8 @@ class PageAnalyzer(Analyzer):
         # injection/traversal/SSRF/redirect sinks (e.g. DVWA `?page=`, `?id=`).
         risky_seen: set[str] = set()
         for target in list(urls) + list(endpoints):
+            if not _same_site(target, asset.url):
+                continue
             for name in _risky_params(target):
                 if name.lower() in risky_seen:
                     continue

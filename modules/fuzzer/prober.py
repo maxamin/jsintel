@@ -10,6 +10,13 @@ Two things turn raw requests into *high-probability* findings:
   body length). A candidate is reported as *interesting* only when its response
   is in the match set *and* differs from the baseline -- the same auto-filter
   idea ffuf/feroxbuster use to suppress false positives.
+* **Repeated-response suppression.** A single up-front baseline cannot see a WAF
+  or rate limiter that starts answering mid-scan (a Cloudflare challenge 403 whose
+  size drifts by a few bytes per path), nor a catch-all whose calibration probe
+  happened to differ. After probing, interesting responses that share one shape --
+  the same redirect target, or the same status and near-identical size -- across
+  many different words on a host are demoted: a real resource does not answer
+  identically to dozens of unrelated names.
 
 Requests run on a bounded thread pool (network I/O bound); an optional per-request
 delay throttles load. In ``dry_run`` mode nothing is sent: candidates come back as
@@ -18,9 +25,12 @@ planned results, which is what previews and the test-suite exercise.
 from __future__ import annotations
 
 import logging
+import re
 import time
 import uuid
+from collections import defaultdict
 from collections.abc import Iterable
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from .urlutil import safe_urlsplit
@@ -30,6 +40,14 @@ from .scope import Scope
 from .transport import Response, Transport
 
 LOGGER = logging.getLogger(__name__)
+
+# How many distinct words may share one response shape on a host before that
+# shape is treated as a catch-all/WAF wall rather than discovered content.
+REPEAT_THRESHOLD = 10
+
+
+def _length_tolerance(length: int) -> int:
+    return max(16, length // 20)
 
 
 class _Baseline:
@@ -46,7 +64,7 @@ class _Baseline:
     def matches(self, response: Response) -> bool:
         if response.status != self.status:
             return False
-        return abs(response.length - self.length) <= max(16, self.length // 20)
+        return abs(response.length - self.length) <= _length_tolerance(self.length)
 
 
 class Prober:
@@ -80,7 +98,7 @@ class Prober:
         else:
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 results = list(pool.map(self._probe_one, in_scope))
-        return results + skipped
+        return suppress_repeated(results) + skipped
 
     # -- calibration ------------------------------------------------------
     def _context_key(self, url: str) -> str:
@@ -173,3 +191,50 @@ class Prober:
             word=candidate.word,
             note="out-of-scope",
         )
+
+
+def _shape_groups(results: list[ProbeResult]) -> list[list[int]]:
+    """Indices of interesting results grouped by (host, response shape)."""
+    by_redirect: dict[tuple[str, int, str], list[int]] = defaultdict(list)
+    by_status: dict[tuple[str, int], list[int]] = defaultdict(list)
+    for i, result in enumerate(results):
+        if not result.interesting:
+            continue
+        parts = safe_urlsplit(result.url)
+        host = parts.netloc
+        if 300 <= result.status < 400:
+            target = result.redirect.split("?", 1)[0]
+            if target.rstrip("/") in (result.url.rstrip("/"), parts.path.rstrip("/")) and target.endswith("/"):
+                continue  # slash-append: the directory exists (catch-alls are caught by the baseline)
+            if result.word:  # case-insensitive: e.g. GitBook 307s /ADMIN -> /admin
+                target = re.sub(re.escape(result.word), "{W}", target, flags=re.I)
+            by_redirect[(host, result.status, target)].append(i)
+        else:
+            by_status[(host, result.status)].append(i)
+    groups = list(by_redirect.values())
+    for indices in by_status.values():
+        indices.sort(key=lambda i: results[i].length)
+        cluster = [indices[0]]
+        for i in indices[1:]:
+            previous = results[cluster[-1]].length
+            if results[i].length - previous <= _length_tolerance(previous):
+                cluster.append(i)
+            else:
+                groups.append(cluster)
+                cluster = [i]
+        groups.append(cluster)
+    return groups
+
+
+def suppress_repeated(results: list[ProbeResult]) -> list[ProbeResult]:
+    """Demote interesting results whose response shape repeats across many words."""
+    out = list(results)
+    for group in _shape_groups(results):
+        if len({results[i].word for i in group}) < REPEAT_THRESHOLD:
+            continue
+        sample = results[group[0]]
+        LOGGER.info("Suppressing %d repeated %d responses (~%d bytes) on %s",
+                    len(group), sample.status, sample.length, safe_urlsplit(sample.url).netloc)
+        for i in group:
+            out[i] = replace(results[i], interesting=False, note="repeated-response")
+    return out

@@ -39,3 +39,17 @@ def test_bounded_on_huge_input():
 def test_runs_on_pages_and_sourcemaps():
     assert "page" in CloudStorageAnalyzer.supported_asset_types
     assert "source_map" in CloudStorageAnalyzer.supported_asset_types
+
+
+def test_virtual_hosted_url_is_not_also_reported_path_style():
+    # Regression: "chain-icons.s3.amazonaws.com/ethereum.png" also produced the
+    # bogus bucket "s3.amazonaws.com/ethereum.png" (240 sweep findings).
+    src = 'a="https://chain-icons.s3.amazonaws.com/ethereum.png";b="https://cdn.storage.googleapis.com/x/y.png"'
+    values = sorted(f.value for f in CloudStorageAnalyzer().analyze(_a(), src))
+    assert values == ["aws-s3: chain-icons.s3.amazonaws.com", "gcs: cdn.storage.googleapis.com"]
+
+
+def test_path_style_still_detected():
+    src = 'a="https://s3.us-east-2.amazonaws.com/my-bucket/k";b="//storage.googleapis.com/gcs-b/o"'
+    values = {f.value for f in CloudStorageAnalyzer().analyze(_a(), src)}
+    assert values == {"aws-s3: s3.us-east-2.amazonaws.com/my-bucket/k", "gcs: storage.googleapis.com/gcs-b/o"}

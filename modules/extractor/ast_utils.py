@@ -140,3 +140,77 @@ def _get_member_chain(node: Any) -> list[str]:
             continue
         break
     return chain
+
+
+# --- Lexical scope helpers -------------------------------------------------
+# Minified bundles reuse the same one-letter names (``e``, ``t``, ``n``) in every
+# function, so any name-keyed analysis that ignores scope conflates unrelated
+# variables across the whole file. These helpers resolve an identifier to the
+# function scope that declares it (function-level granularity; block scoping of
+# let/const is not modelled).
+_FUNCTION_TYPES = frozenset({
+    "function_declaration", "function_expression", "function", "arrow_function",
+    "method_definition", "generator_function_declaration", "generator_function",
+})
+ROOT_SCOPE: tuple[int, int] = (-1, -1)
+
+
+def scope_key(node: Any) -> tuple[int, int]:
+    """Byte span identifying a function node (wrappers are not stable across accesses)."""
+    return (node.start_byte, node.end_byte)
+
+
+def enclosing_function(node: Any) -> Any | None:
+    """Nearest ancestor function node of *node*, or None at program level."""
+    current = getattr(node, "parent", None)
+    while current is not None:
+        if current.type in _FUNCTION_TYPES:
+            return current
+        current = current.parent
+    return None
+
+
+def _pattern_names(node: Any) -> Generator[str, None, None]:
+    """Identifier names bound by a parameter/declarator pattern."""
+    node_type = getattr(node, "type", None)
+    if node_type in ("identifier", "shorthand_property_identifier_pattern"):
+        yield _node_text(node)
+    elif node_type == "assignment_pattern":
+        yield from _pattern_names(node.child_by_field_name("left"))
+    elif node_type in ("rest_pattern", "object_pattern", "array_pattern", "pair_pattern",
+                       "object_assignment_pattern"):
+        for child in node.named_children:
+            if node_type == "pair_pattern" and child == node.child_by_field_name("key"):
+                continue
+            yield from _pattern_names(child)
+
+
+def function_params(func: Any) -> list[str]:
+    """Names bound by a function's parameter list."""
+    params = func.child_by_field_name("parameters")
+    if params is None:  # ``x => ...`` has a single ``parameter`` field
+        single = func.child_by_field_name("parameter")
+        return list(_pattern_names(single)) if single is not None else []
+    return [name for child in params.named_children for name in _pattern_names(child)]
+
+
+class ScopeResolver:
+    """Resolve identifiers to their declaring function scope within one tree."""
+
+    def __init__(self, root: Any) -> None:
+        self._declared: dict[tuple[int, int], set[str]] = {}
+        for func in _find_nodes(root, _FUNCTION_TYPES):
+            self._declared.setdefault(scope_key(func), set()).update(function_params(func))
+        for decl in _find_nodes(root, ("variable_declarator",)):
+            func = enclosing_function(decl)
+            key = scope_key(func) if func is not None else ROOT_SCOPE
+            self._declared.setdefault(key, set()).update(_pattern_names(decl.child_by_field_name("name")))
+
+    def resolve(self, name: str, node: Any) -> tuple[int, int]:
+        """Scope that binds *name* as seen from *node* (ROOT_SCOPE for globals)."""
+        func = enclosing_function(node)
+        while func is not None:
+            if name in self._declared.get(scope_key(func), ()):
+                return scope_key(func)
+            func = enclosing_function(func)
+        return ROOT_SCOPE
