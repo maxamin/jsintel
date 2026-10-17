@@ -1917,3 +1917,44 @@ together.
 in recommendations.
 
 **Suite: 675 → 701 passed (+26).**
+
+---
+
+## MILESTONE — Remaining sweep follow-ups closed (2026-10-17)
+
+1. **Next.js chunk URLs are repaired, not just dropped** (`crawler.sh
+   repair_repeated_segments`). A two-pass awk takes the tail from the repeated block's
+   last occurrence and puts it under the prefix a well-formed URL on the same origin
+   uses for that block (`/static/chunks/static/chunks/x.js` →
+   `/_next/static/chunks/x.js`). It drops the URL when nothing on the origin shows the
+   prefix.
+2. **amass under proxychains (measured, then fixed).** Run in an isolated network
+   namespace behind a non-forwarding logging SOCKS proxy, amass sent **11 DNS packets
+   directly** to 1.1.1.1/1.0.0.1/Quad9/OpenDNS/ControlD and pushed its local engine
+   connection (`:4001`) into the proxy. assetfinder sent 6/6 source requests through
+   the proxy and nothing direct. `subdomains.sh` now skips amass when `JSINTEL_PROXY_URL`
+   is set (with a warning) and passes subfinder `-proxy`.
+3. **Lab hostnames under proxychains.** proxychains answers `/etc/hosts` before
+   proxy_dns (verified: `shop.vuln.lab` → 127.0.0.1, `example.com` → 224.0.0.1), so the
+   Python stages already went direct through `localnet`. katana and Chromium did not.
+   `crawler.sh is_loopback_host` now counts names that `getent` maps to 127/8.
+   `proxyutil.chromium_launch` adds `EXCLUDE` and `--proxy-bypass-list` for
+   `loopback_hostnames()`. Proof: a full `proxychains4 ./jsintel.sh -i
+   http://shop.vuln.lab:18790/ -p -f -w --forms` run found 1 service, crawled 3 assets
+   and captured 1/1 screenshots.
+4. **Pre-filter with `-P`.** `sweep.sh` passes `--keep-resolving`: a host silent on
+   80/443 is kept while its name has an address record, so the port scan can still find
+   services elsewhere. Only non-resolving names are dropped. Under proxychains every
+   name gets a placeholder address, so only wildcard duplicates are dropped there.
+5. **Current-directory shadowing.** `utils.sh` exports `PYTHONSAFEPATH=1`. Proof: with a
+   decoy `modules/__init__.py` (`raise SystemExit("SHADOWED")`) in the current directory,
+   `python3 -m modules.proxyutil` loaded the decoy before; it now loads the repo's
+   module. Path-run scripts (`liveanalysis.py`) still work, because they add the repo
+   root themselves.
+
+**Tests:** `tests/test_sweep_upgrades.py` gains the chunk repair (rebuild, dedupe, drop
+without prefix), `/etc/hosts` loopback names for katana (fake `getent`) and Chromium,
+`keep_resolving`, and amass skipped plus subfinder/assetfinder proxied (fake tools).
+The recommendations §0 follow-ups are all shipped and removed.
+
+**Suite: 701 → 706 passed (+5).**

@@ -126,17 +126,36 @@ if [[ -s "$SCOPE_DOMS" ]]; then
   KATANA_SCOPE=(-cs "^[a-zA-Z][a-zA-Z0-9+.-]*://([^/?#@]*@)?([^/?#@]*\\.)?(${KATANA_SCOPE_ALT})(:[0-9]+)?([/?#]|\$)")
 fi
 
-# drop_repeated_segments: drop URLs whose path repeats a two-segment block, e.g.
-# /static/chunks/static/chunks/x.js or /app/static/chunks/app/static/chunks/... katana
+# repair_repeated_segments: rebuild URLs whose path repeats a two-segment block, e.g.
+# /static/chunks/static/chunks/x.js or /static/chunks/app/static/chunks/1.js. katana
 # resolves webpack chunk names against the importing file's directory instead of the
-# bundle's public path (/_next/), and the error compounds across rounds. In the
-# 2026-10-09 sweep these artifacts were 47,470 of 84,609 failed downloads (56%).
-drop_repeated_segments() {
-  awk '{ p=$0; sub(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\/]*/, "", p); sub(/[?#].*$/, "", p)
-         n=split(p, s, "/"); delete seen; bad=0
-         for (i=1; i<n; i++) { if (s[i]=="" || s[i+1]=="") continue
-           k=s[i] "/" s[i+1]; if (k in seen) { bad=1; break } seen[k]=1 }
-         if (!bad) print }'
+# bundle's public path, and the error compounds across rounds; in the 2026-10-09 sweep
+# these artifacts were 47,470 of 84,609 failed downloads (56%). The real file is the
+# tail from the block's last occurrence, under the prefix a well-formed URL on the same
+# origin uses for that block (/_next/static/chunks/... -> "/_next/"). With no such
+# URL to learn the prefix from, the artifact is dropped.
+repair_repeated_segments() {
+  awk '
+    { line[NR]=$0; match($0, /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\/?#]*/)
+      origin[NR]=substr($0, 1, RLENGTH); rest=substr($0, RLENGTH+1); q=""
+      if (match(rest, /[?#]/)) { q=substr(rest, RSTART); rest=substr(rest, 1, RSTART-1) }
+      path[NR]=rest; query[NR]=q
+      n=split(rest, s, "/"); delete seen; blk=""
+      for (i=1; i<n; i++) { if (s[i]=="" || s[i+1]=="") continue
+        k=s[i] "/" s[i+1]; if (k in seen) { blk=k; break } seen[k]=1 }
+      if (blk!="") { bad[NR]=blk; next }
+      pre=""
+      for (i=1; i<n; i++) { if (i>1) pre=pre s[i-1] "/"
+        if (s[i]=="" || s[i+1]=="") continue
+        key=origin[NR] SUBSEP s[i] "/" s[i+1]; if (!(key in prefix)) prefix[key]=pre } }
+    END {
+      for (r=1; r<=NR; r++) {
+        if (!(r in bad)) { print line[r]; continue }
+        key=origin[r] SUBSEP bad[r]; if (!(key in prefix)) continue
+        n=split(path[r], s, "/"); split(bad[r], b, "/"); last=0
+        for (i=1; i<n; i++) if (s[i]==b[1] && s[i+1]==b[2]) last=i
+        tail=s[last]; for (i=last+1; i<=n; i++) tail=tail "/" s[i]
+        print origin[r] prefix[key] tail query[r] } }'
 }
 
 # Clean katana output (unescape JS backslash-escapes, drop malformed URLs), keep
@@ -146,7 +165,7 @@ clean_and_scope() {
     | grep -Eiv '\\|%5[Cc]' \
     | grep -Ei "$CRAWL_RE" \
     | sed 's/[[:space:]]*$//' \
-    | drop_repeated_segments \
+    | repair_repeated_segments \
     | if [[ -s "$SCOPE_DOMS" ]]; then
         awk -v sf="$SCOPE_DOMS" '
           BEGIN { while ((getline d < sf) > 0) if (d != "") scope[d]=1 }
@@ -208,11 +227,20 @@ if command -v katana >/dev/null 2>&1; then
   # katana (Go) bypasses the proxychains preload, so it must be given the proxy.
   # Loopback seeds are exempt, matching the managed proxychains config's localnet
   # rule (a SOCKS proxy such as Tor cannot reach the operator's own 127.0.0.0/8).
+  # A name counts as loopback when it resolves to 127/8: proxychains answers from
+  # /etc/hosts before its proxy_dns placeholder, so lab names (shop.vuln.lab) qualify
+  # while real names come back as 224.x. Tor cannot resolve or reach either.
+  is_loopback_host() {
+    [[ "$1" =~ ^(127\.[0-9.]+|localhost|\[?::1\]?)$ ]] && return 0
+    [[ "$(getent ahostsv4 "$1" 2>/dev/null | awk 'NR==1{print $1}')" == 127.* ]]
+  }
   KATANA_PROXY=()
-  if [[ -n "${JSINTEL_PROXY_URL:-}" ]] \
-     && while IFS= read -r seed; do host_of "$seed"; done < "$SEEDS" \
-          | grep -qvE '^(127\.[0-9.]+|localhost|\[?::1\]?)$'; then
-    KATANA_PROXY=(-proxy "$JSINTEL_PROXY_URL")
+  if [[ -n "${JSINTEL_PROXY_URL:-}" ]]; then
+    while IFS= read -r seed; do
+      if ! is_loopback_host "$(host_of "$seed")"; then
+        KATANA_PROXY=(-proxy "$JSINTEL_PROXY_URL"); break
+      fi
+    done < "$SEEDS"
   fi
   KATANA_RC=0
   (

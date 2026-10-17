@@ -29,7 +29,7 @@ A SCOPE value is a domain, a comma- or space-separated list, a file of domains, 
 | `JSINTEL_FORMS_ARGS` | – | e.g. `--no-submit`, `--browser --settle 6`, `--deny term` |
 | `JSINTEL_SWEEP_PARALLEL` | 3 | Concurrent targets in `-m` |
 | `JSINTEL_SWEEP_RESUME` | 0 | 1 = skip targets already `ok` in the sweep output dir |
-| `JSINTEL_SWEEP_PREFILTER` | full | `full` = skip dead + wildcard-DNS duplicates; `wildcard` = only collapse duplicates; `off` |
+| `JSINTEL_SWEEP_PREFILTER` | full | `full` = skip dead + wildcard-DNS duplicates (with `-P`: only non-resolving names count as dead); `wildcard` = only collapse duplicates; `off` |
 | `JSINTEL_SWEEP_DENY` | (empty) | comma/space shell globs of targets to skip, e.g. `*.files.wordpress.com` |
 | `JSINTEL_CRAWL_DURATION` | 15m | katana `-ct` per crawl (`90s`, `15m`, `1h`; `0`/`off` = unbounded; invalid -> 15m) |
 | `JSINTEL_DOWNLOAD_BLOCK_AFTER` | 25 | consecutive 403/429 from one host before its remaining assets are `blocked` (0 = off) |
@@ -67,3 +67,7 @@ python3 modules/database.py --output OUT ingest | query "SQL"
 python3 modules/reporter.py --output OUT ; python3 modules/triage.py --output OUT
 python3 -m modules.diff OLD NEW ; python3 -m modules.sweep_aggregate --output OUT targets...
 ```
+
+`modules/utils.sh` exports `PYTHONSAFEPATH=1`, so every stage imports this repo's
+`modules` package, never one in the operator's current directory. Stages pass
+`PYTHONPATH="$BASE_DIR"`, or the script adds the repo root itself.

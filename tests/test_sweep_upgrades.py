@@ -81,6 +81,15 @@ def test_prefilter_modes():
     assert prefilter(targets, fetch)["kept"] == ["up.example.test"]
 
 
+def test_prefilter_keep_resolving_spares_silent_hosts_for_port_scans():
+    targets = ["silent.example.test", "gone.example.test", "up.example.test"]
+    fetch = _fetcher({"up.example.test": b"<title>up</title>"}, set())
+    out = prefilter(targets, fetch, keep_resolving=True,
+                    resolver=lambda h: h == "silent.example.test")
+    assert out["kept"] == ["silent.example.test", "up.example.test"]
+    assert out["skipped"] == {"gone.example.test": "dead: no address record"}
+
+
 def test_fingerprint_masks_echoed_host_and_tolerates_small_size_drift():
     a = fingerprint("a.p.test", 200, "https://a.p.test/", CATCH_ALL.replace(b"{host}", b"a.p.test"))
     b = fingerprint("longer-name.p.test", 200, "https://longer-name.p.test/",
@@ -130,6 +139,16 @@ def test_chromium_launch_strips_preload_and_sets_proxy():
     assert proxyutil.chromium_launch({"PATH": "/usr/bin"}, CONF) == ({"PATH": "/usr/bin"}, [])
     # Under proxychains without a usable proxy: refuse (never launch direct).
     assert proxyutil.chromium_launch(PRELOAD, "[ProxyList]\nsocks5 h 1 u p\n") is None
+
+
+def test_loopback_hostnames_bypass_the_proxy_in_chromium(monkeypatch):
+    hosts = ("127.0.0.1 localhost\n127.0.1.1 box.example box\n::1 ip6-localhost\n"
+             "10.0.0.5 intranet.test\n127.0.0.4 api.vuln.lab # lab\n")
+    assert proxyutil.loopback_hostnames(hosts) == ["box.example", "box", "api.vuln.lab"]
+    monkeypatch.setattr(proxyutil, "loopback_hostnames", lambda: ["api.vuln.lab"])
+    _, args = proxyutil.chromium_launch(PRELOAD, CONF)
+    assert "--proxy-bypass-list=api.vuln.lab" in args
+    assert any("EXCLUDE api.vuln.lab" in a for a in args if a.startswith("--host-resolver"))
 
 
 def test_managed_conf_excludes_loopback_before_proxylist(tmp_path):
@@ -276,8 +295,14 @@ def _crawl_argv(tmp_path: Path, seed: str = "http://127.0.0.1:9/", **env: str) -
     bindir = tmp_path / "bin"
     bindir.mkdir(exist_ok=True)
     _exe(bindir / "curl", "exit 7\n")          # redirect probe: no network, seed kept as-is
+    # getent as proxychains answers it: /etc/hosts lab names -> 127.x, others -> 224.x
+    _exe(bindir / "getent", 'case "$2" in *.lab.test) echo "127.0.0.5 STREAM $2";; '
+         '*) echo "224.0.0.1 STREAM $2";; esac\n')
     _exe(bindir / "katana", 'printf "%s\\n" "$@" > "$(dirname "$0")/argv.txt"\n'
-         'printf "http://127.0.0.1:9/static/chunks/static/chunks/x.js\\nhttp://127.0.0.1:9/_next/static/chunks/x.js\\n"\n')
+         'printf "%s\\n" http://127.0.0.1:9/static/chunks/static/chunks/x.js '
+         'http://127.0.0.1:9/_next/static/chunks/x.js '
+         'http://127.0.0.1:9/static/chunks/app/static/chunks/z.js?v=1 '
+         'http://127.0.0.1:9/assets/js/assets/js/y.js\n')
     out = tmp_path / "out"
     (out / "assets").mkdir(parents=True, exist_ok=True)
     (out / "logs").mkdir(exist_ok=True)
@@ -306,10 +331,19 @@ def test_crawler_bounds_duration_and_routes_go_tool_through_proxy(tmp_path):
     assert invalid[invalid.index("-ct") + 1] == "15m"            # typo falls back, never unbounded
 
 
-def test_crawler_drops_self_repeating_chunk_urls(tmp_path):
+def test_crawler_repairs_self_repeating_chunk_urls(tmp_path):
     _crawl_argv(tmp_path)
     kept = (tmp_path / "out" / "assets" / "crawled_urls.txt").read_text().splitlines()
-    assert kept == ["http://127.0.0.1:9/_next/static/chunks/x.js"]
+    # Rebuilt under the prefix a well-formed URL on the origin uses (/_next/), deduped;
+    # an artifact whose block has no well-formed example (assets/js) is dropped.
+    assert kept == ["http://127.0.0.1:9/_next/static/chunks/x.js",
+                    "http://127.0.0.1:9/_next/static/chunks/z.js?v=1"]
+
+
+def test_crawler_treats_hosts_file_loopback_names_as_local(tmp_path):
+    proxy = {"JSINTEL_PROXY_URL": "socks5://127.0.0.1:9050"}
+    assert "-proxy" not in _crawl_argv(tmp_path, "http://shop.lab.test:3000/", **proxy)
+    assert "-proxy" in _crawl_argv(tmp_path, "https://app.example.test/", **proxy)
 
 
 # --- telemetry, health, sweep wiring --------------------------------------------------
@@ -445,3 +479,34 @@ def test_forms_driver_passes_proxy_flags_and_clean_env(monkeypatch, tmp_path):
         driver._launch_chromium("/usr/bin/chromium", tmp_path, ["--x"])
     assert "--proxy-server=socks5://127.0.0.1:9050" in seen["cmd"] and "--x" in seen["cmd"]
     assert seen["env"] == {"PATH": "/usr/bin"}
+
+
+def _subdomains(tmp_path: Path, **env: str) -> dict[str, str]:
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    for tool in ("assetfinder", "subfinder", "amass"):
+        _exe(bindir / tool, f'echo "$* | ${{HTTPS_PROXY:-none}}" > "$(dirname "$0")/{tool}.args"\n')
+    out = tmp_path / "out"
+    (out / "assets").mkdir(parents=True)
+    (out / "logs").mkdir()
+    subprocess.run(["bash", str(ROOT / "modules" / "subdomains.sh"), "example.test"],
+                   env={**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}",
+                        "OUTPUT_DIR": str(out), "LOG_FILE": str(out / "logs" / "l.log"),
+                        "CONFIG": "/nonexistent", "THREADS": "2", **env},
+                   capture_output=True, text=True, timeout=120, check=True)
+    return {t: (bindir / f"{t}.args").read_text().strip() for t in ("assetfinder", "subfinder", "amass")
+            if (bindir / f"{t}.args").is_file()}
+
+
+def test_amass_is_skipped_and_go_tools_proxied_under_proxychains(tmp_path):
+    ran = _subdomains(tmp_path, JSINTEL_PROXY_URL="socks5://127.0.0.1:9050")
+    # amass resolves through public DNS directly (measured), so it must not run.
+    assert "amass" not in ran
+    assert ran["assetfinder"].endswith("| socks5://127.0.0.1:9050")
+    assert "-proxy socks5://127.0.0.1:9050" in ran["subfinder"]
+
+
+def test_amass_runs_without_proxychains(tmp_path):
+    ran = _subdomains(tmp_path)
+    assert set(ran) == {"assetfinder", "subfinder", "amass"}
+    assert all(v.endswith("| none") for v in ran.values())

@@ -210,8 +210,36 @@ def chromium_launch(env: dict[str, str] | None = None,
         base["LD_PRELOAD"] = " ".join(preload)
     else:
         base.pop("LD_PRELOAD", None)
-    rules = "MAP * ~NOTFOUND" + (f" , EXCLUDE {host}" if not host.replace(".", "").isdigit() else "")
-    return base, [f"--proxy-server={scheme}://{host}:{port}", f"--host-resolver-rules={rules}"]
+    # Names /etc/hosts maps to loopback (lab hosts such as shop.vuln.lab) bypass the
+    # proxy and resolve locally, like the managed config's localnet rule does for every
+    # other stage: a SOCKS proxy such as Tor can neither resolve nor reach them.
+    local = loopback_hostnames()
+    excludes = [n for n in ([host] if not host.replace(".", "").isdigit() else []) + local]
+    rules = "MAP * ~NOTFOUND" + "".join(f" , EXCLUDE {n}" for n in excludes)
+    args = [f"--proxy-server={scheme}://{host}:{port}", f"--host-resolver-rules={rules}"]
+    if local:
+        args.append("--proxy-bypass-list=" + ";".join(local))
+    return base, args
+
+
+def loopback_hostnames(hosts_text: str | None = None) -> list[str]:
+    """Hostnames that /etc/hosts maps to a loopback address (127/8 or ::1)."""
+    if hosts_text is None:
+        try:
+            with open("/etc/hosts", encoding="utf-8", errors="replace") as handle:
+                hosts_text = handle.read()
+        except OSError:
+            return []
+    names: list[str] = []
+    for raw in hosts_text.splitlines():
+        parts = raw.split("#", 1)[0].split()
+        if len(parts) < 2 or not (parts[0].startswith("127.") or parts[0] == "::1"):
+            continue
+        for name in parts[1:]:
+            name = name.lower()
+            if name not in names and name != "localhost" and not name.startswith("ip6-"):
+                names.append(name)
+    return names
 
 
 def main(argv: list[str] | None = None) -> int:

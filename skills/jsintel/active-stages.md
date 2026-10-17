@@ -111,17 +111,24 @@ is never proxied. The listener and forms CLIs re-exec through
 127.0.0.1:9050.
 
 What the preload does **not** cover, all verified on loopback 2026-10-17:
-- **Go binaries** (katana, assetfinder, subfinder, amass) make syscalls directly. Before
+- **Go binaries** (katana, assetfinder, subfinder, amass) make syscalls directly.
+  **amass is skipped** under proxychains: in an isolated netns behind a logging SOCKS
+  proxy it sent DNS directly to 1.1.1.1/Quad9/OpenDNS and pushed its own engine
+  connection (`:4001`) into the proxy. assetfinder was 6/6 proxied, and subfinder also
+  gets `-proxy`. Before
   the fix, katana crawled from the operator's real IP. `jsintel.sh` exports
   `JSINTEL_PROXY_URL` (from `python3 -m modules.proxyutil proxy-url`; socks4 becomes
-  socks5 for remote DNS). The crawler passes `-proxy` (skipped when every seed is
-  loopback), and `subdomains.sh` sets `HTTP(S)_PROXY`/`ALL_PROXY` for the enum tools.
+  socks5 for remote DNS). The crawler passes `-proxy` unless every seed is loopback.
+  `is_loopback_host` counts names that `getent` resolves to 127/8; under proxychains,
+  /etc/hosts answers before proxy_dns, so lab names qualify. and `subdomains.sh` sets `HTTP(S)_PROXY`/`ALL_PROXY` for the enum tools.
   The run refuses to start if the chain cannot be expressed as a proxy URL.
 - **Raw-packet scanners** (nmap/naabu/masscan): with `proxy_dns`, every host resolves to
   `224.0.0.1`. `portscan.discover_ports` now connect-scans hostnames through the
   preload instead (`python-connect (proxychains)`), with a 10 s minimum timeout.
 - **Chromium aborts under the preload** (rc 134). `proxyutil.chromium_launch` strips it
-  and adds `--proxy-server` + `--host-resolver-rules=MAP * ~NOTFOUND`. It returns `None`
+  and adds `--proxy-server` + `--host-resolver-rules=MAP * ~NOTFOUND`, plus
+  `EXCLUDE`/`--proxy-bypass-list` for `proxyutil.loopback_hostnames()` (the /etc/hosts
+  loopback names). It returns `None`
   (webshot skips, the forms driver raises) when no usable proxy exists.
 - Do not export SOCKS proxy env to Python stages: `requests` lacks SOCKS support here
   (no PySocks). They are already proxied by the preload.

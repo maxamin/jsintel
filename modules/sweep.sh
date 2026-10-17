@@ -120,6 +120,11 @@ run_one() {
 # not answer on 80/443), off. Decisions: reports/prefilter.json. With resume, targets
 # already ok are not probed again.
 PREFILTER="${JSINTEL_SWEEP_PREFILTER:-full}"
+# With -P a host silent on 80/443 may still serve on another port: keep it while its
+# name resolves (under proxychains every name "resolves", so only wildcard
+# duplicates are dropped there).
+PREFILTER_ARGS=()
+[[ "$SWEEP_PORTS" == "1" ]] && PREFILTER_ARGS=(--keep-resolving)
 RUN_TARGETS=("${TARGETS[@]}")
 if [[ "$PREFILTER" != "off" && "$PREFILTER" != "0" ]]; then
   PENDING=()
@@ -133,7 +138,7 @@ if [[ "$PREFILTER" != "off" && "$PREFILTER" != "0" ]]; then
     log_info "Pre-filter ($PREFILTER): probing ${#PENDING[@]} target(s) for liveness and wildcard DNS"
     if mapfile -t RUN_TARGETS < <(printf '%s\n' "${PENDING[@]}" \
          | PYTHONPATH="$BASE_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m modules.sweep_prefilter \
-             --output "$OUTPUT_DIR" --mode "$PREFILTER" 2>>"$LOG_FILE") && [[ -s "$OUTPUT_DIR/reports/prefilter.json" ]]; then
+             --output "$OUTPUT_DIR" --mode "$PREFILTER" ${PREFILTER_ARGS[@]+"${PREFILTER_ARGS[@]}"} 2>>"$LOG_FILE") && [[ -s "$OUTPUT_DIR/reports/prefilter.json" ]]; then
       log_info "Pre-filter kept ${#RUN_TARGETS[@]} of ${#PENDING[@]} target(s); see reports/prefilter.json"
     else
       log_warn "Pre-filter failed; running every target"

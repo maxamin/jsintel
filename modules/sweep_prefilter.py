@@ -8,7 +8,8 @@ over HTTP(S), and names that only exist because a parent domain answers every la
 catch-all page. This stage sends at most two cheap GETs per target plus one per
 wildcard-candidate parent, then:
 
-* **dead**: no HTTP answer on https:// or http:// -> skipped;
+* **dead**: no HTTP answer on https:// or http:// -> skipped (with ``--keep-resolving``,
+  used for port-scan sweeps, only names without an address record are skipped);
 * **wildcard duplicate**: the parent answers a random, certainly-unregistered label
   with the same response fingerprint (status, title, redirect shape, size within
   10%) -> only the first such target per parent is kept as the representative.
@@ -24,6 +25,7 @@ import concurrent.futures
 import json
 import re
 import secrets
+import socket
 import sys
 import time
 import warnings
@@ -98,8 +100,18 @@ def parent_of(host: str) -> str | None:
     return ".".join(labels[1:]) if len(labels) >= 3 else None
 
 
+def resolves(host: str) -> bool:
+    """True when ``host`` has an address record (no traffic to the host itself)."""
+    try:
+        return bool(socket.getaddrinfo(host, None))
+    except OSError:
+        return False
+
+
 def prefilter(targets: list[str], fetch: Fetcher, *, mode: str = "full",
-              workers: int = 32, random_label: Callable[[], str] | None = None) -> dict:
+              workers: int = 32, random_label: Callable[[], str] | None = None,
+              keep_resolving: bool = False,
+              resolver: Callable[[str], bool] = resolves) -> dict:
     """Return ``{"kept": [...], "skipped": {target: reason}, "wildcards": {...}}``."""
     if mode == "off":
         return {"kept": list(targets), "skipped": {}, "wildcards": {}}
@@ -116,6 +128,11 @@ def prefilter(targets: list[str], fetch: Fetcher, *, mode: str = "full",
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         target_fp = dict(zip(targets, pool.map(lambda t: probe(t, fetch), targets)))
         wild_fp = dict(zip(parents, pool.map(lambda p: probe(probes[p], fetch), parents)))
+        # With a port scan (-P), "no answer on 80/443" does not mean dead: a service
+        # may listen elsewhere. Only names with no address record are dropped then.
+        silent = [t for t in targets if target_fp[t] is None]
+        resolving = (set(t for t, ok in zip(silent, pool.map(resolver, silent)) if ok)
+                     if keep_resolving and mode == "full" else set())
 
     kept: list[str] = []
     skipped: dict[str, str] = {}
@@ -123,8 +140,9 @@ def prefilter(targets: list[str], fetch: Fetcher, *, mode: str = "full",
     for target in targets:
         fp = target_fp[target]
         if fp is None:
-            if mode == "full":
-                skipped[target] = "dead: no HTTP(S) answer"
+            if mode == "full" and target not in resolving:
+                skipped[target] = ("dead: no address record" if keep_resolving
+                                   else "dead: no HTTP(S) answer")
                 continue
             kept.append(target)
             continue
@@ -150,11 +168,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", choices=("full", "wildcard", "off"), default="full")
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--workers", type=int, default=32)
+    parser.add_argument("--keep-resolving", action="store_true",
+                        help="Keep silent hosts whose name still resolves (for port-scan sweeps).")
     parser.add_argument("targets", nargs="*", help="Targets (default: read from stdin).")
     args = parser.parse_args(argv)
     targets = args.targets or [line.strip() for line in sys.stdin if line.strip()]
     started = time.time()
-    result = prefilter(targets, requests_fetcher(args.timeout), mode=args.mode, workers=args.workers)
+    result = prefilter(targets, requests_fetcher(args.timeout), mode=args.mode, workers=args.workers,
+                       keep_resolving=args.keep_resolving)
     reports = args.output / "reports"
     reports.mkdir(parents=True, exist_ok=True)
     record = {"mode": args.mode, "checked": len(targets), "kept": len(result["kept"]),
