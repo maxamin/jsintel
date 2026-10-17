@@ -131,7 +131,7 @@ def _sweep(root: Path, out: Path, targets: list[str], **env: str) -> str:
     proc = subprocess.run(
         ["bash", str(root / "modules" / "sweep.sh"), str(tfile)],
         env={**os.environ, "OUTPUT_DIR": str(out), "LOG_FILE": "",
-             "JSINTEL_SWEEP_PARALLEL": "2", **env},
+             "JSINTEL_SWEEP_PARALLEL": "2", "JSINTEL_SWEEP_PREFILTER": "off", **env},
         capture_output=True, text=True, timeout=60,
     )
     assert proc.returncode == 0, proc.stderr

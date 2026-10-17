@@ -4,7 +4,8 @@
 `-i FILE|URL` seeds (required unless `-m`) · `-o DIR` (default `./output`) · `-t N` workers
 (default `config threads`=50) · `-s SCOPE` subdomains · `-p SCOPE` port scan · `-w` screenshots ·
 `-f SCOPE` fuzz · `-m FILE` mass sweep with `-S -P -W -F` per-target toggles · `-v` verbose ·
-`--cookie "k=v; ..."` · `--jwt TOKEN` · `--forms` · `--proxychains [conf]` · `-h`.
+`--cookie "k=v; ..."` · `--jwt TOKEN` · `--forms` · `--proxychains [conf]` ·
+`--reanalyze <old dir> -o <new dir>` (offline rebuild; sweep dirs too) · `-h`.
 A SCOPE value is a domain, a comma- or space-separated list, a file of domains, or
 `@file`. The union of all scopes becomes `CRAWL_SCOPE`.
 
@@ -28,6 +29,11 @@ A SCOPE value is a domain, a comma- or space-separated list, a file of domains, 
 | `JSINTEL_FORMS_ARGS` | – | e.g. `--no-submit`, `--browser --settle 6`, `--deny term` |
 | `JSINTEL_SWEEP_PARALLEL` | 3 | Concurrent targets in `-m` |
 | `JSINTEL_SWEEP_RESUME` | 0 | 1 = skip targets already `ok` in the sweep output dir |
+| `JSINTEL_SWEEP_PREFILTER` | full | `full` = skip dead + wildcard-DNS duplicates; `wildcard` = only collapse duplicates; `off` |
+| `JSINTEL_SWEEP_DENY` | (empty) | comma/space shell globs of targets to skip, e.g. `*.files.wordpress.com` |
+| `JSINTEL_CRAWL_DURATION` | 15m | katana `-ct` per crawl (`90s`, `15m`, `1h`; `0`/`off` = unbounded; invalid -> 15m) |
+| `JSINTEL_DOWNLOAD_BLOCK_AFTER` | 25 | consecutive 403/429 from one host before its remaining assets are `blocked` (0 = off) |
+| `JSINTEL_PROXY_URL` | (derived) | set by `jsintel.sh` under proxychains; katana `-proxy` and Go enum tools use it |
 | `JSINTEL_UNDER_PROXYCHAINS` | – | Internal re-exec guard |
 | `JSINTEL_LISTEN_TOKEN` | – | Listener shared-secret header |
 | `JSINTEL_LISTEN_URL`, `JSINTEL_SCOPE` | – | mitmproxy addon target and scope |

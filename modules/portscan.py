@@ -39,6 +39,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from modules.proxyutil import under_proxychains
+
 LOGGER = logging.getLogger("jsintel.portscan")
 
 # Curated set of ports that commonly carry an HTTP(S) service. Deliberately web
@@ -249,6 +251,16 @@ def discover_ports(
     prefer_tools: bool = True,
 ) -> tuple[dict[str, set[int]], str]:
     """Return ``{host: {open_ports}}`` and the name of the scanner used."""
+    if prefer_tools and under_proxychains():
+        # naabu/nmap/masscan send raw packets the preload never sees (they would
+        # reveal the operator's address), and proxy_dns hands getaddrinfo a
+        # placeholder IP: the 2026-10-09 sweep nmap-scanned 224.0.0.1 for all 13,070
+        # targets and found 0 services. A TCP connect() by *hostname* goes through
+        # the preload, which hands the name to the proxy to resolve and connect.
+        LOGGER.info("Under proxychains: connect-scanning hostnames through the proxy "
+                    "(raw-packet scanners skipped)")
+        return (_scan_python(hosts, ports, timeout=max(timeout, 10.0), workers=workers),
+                "python-connect (proxychains)")
     if prefer_tools:
         # naabu handles hostname lists natively and is fastest; masscan needs
         # resolved IPs so we skip it for hostname input and let nmap/naabu win.

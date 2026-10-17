@@ -63,6 +63,13 @@ class FrameworkFinding(Finding):
         return {"asset_url": self.asset_url, "technology": self.technology, "evidence": self.evidence}
 
 
+# Code-structure inventory, not security signal. These go to code_intel.json instead
+# of findings.json: in the 2026-10-09 sweep they were 2.51M of 2.64M "findings" (95%,
+# up to 152k on one target), drowning findings.json, the DB and triage.
+CODE_INTEL_TYPES = frozenset({"call_graph", "class", "export",
+                              "cross_asset_dependency", "cross_asset_call"})
+
+
 @dataclass(frozen=True, slots=True)
 class SecurityFinding(Finding):
     finding_type: str
@@ -71,6 +78,10 @@ class SecurityFinding(Finding):
     source: str = ""
     sink: str = ""
     report: str = field(init=False, default="findings")
+
+    def __post_init__(self) -> None:
+        if self.finding_type in CODE_INTEL_TYPES:
+            object.__setattr__(self, "report", "code_intel")
 
     def to_record(self) -> dict[str, Any]:
         return {

@@ -126,6 +126,19 @@ if [[ -s "$SCOPE_DOMS" ]]; then
   KATANA_SCOPE=(-cs "^[a-zA-Z][a-zA-Z0-9+.-]*://([^/?#@]*@)?([^/?#@]*\\.)?(${KATANA_SCOPE_ALT})(:[0-9]+)?([/?#]|\$)")
 fi
 
+# drop_repeated_segments: drop URLs whose path repeats a two-segment block, e.g.
+# /static/chunks/static/chunks/x.js or /app/static/chunks/app/static/chunks/... katana
+# resolves webpack chunk names against the importing file's directory instead of the
+# bundle's public path (/_next/), and the error compounds across rounds. In the
+# 2026-10-09 sweep these artifacts were 47,470 of 84,609 failed downloads (56%).
+drop_repeated_segments() {
+  awk '{ p=$0; sub(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\/]*/, "", p); sub(/[?#].*$/, "", p)
+         n=split(p, s, "/"); delete seen; bad=0
+         for (i=1; i<n; i++) { if (s[i]=="" || s[i+1]=="") continue
+           k=s[i] "/" s[i+1]; if (k in seen) { bad=1; break } seen[k]=1 }
+         if (!bad) print }'
+}
+
 # Clean katana output (unescape JS backslash-escapes, drop malformed URLs), keep
 # only asset-like URLs, and restrict to the crawl scope when one is set.
 clean_and_scope() {
@@ -133,6 +146,7 @@ clean_and_scope() {
     | grep -Eiv '\\|%5[Cc]' \
     | grep -Ei "$CRAWL_RE" \
     | sed 's/[[:space:]]*$//' \
+    | drop_repeated_segments \
     | if [[ -s "$SCOPE_DOMS" ]]; then
         awk -v sf="$SCOPE_DOMS" '
           BEGIN { while ((getline d < sf) > 0) if (d != "") scope[d]=1 }
@@ -180,10 +194,30 @@ if command -v katana >/dev/null 2>&1; then
   KATANA_VMEM_MB="${JSINTEL_KATANA_MAX_VMEM_MB:-8192}"
   [[ "$KATANA_VMEM_MB" =~ ^[0-9]+$ ]] || KATANA_VMEM_MB=8192
   (( KATANA_VMEM_MB == 0 || KATANA_VMEM_MB >= 2048 )) || KATANA_VMEM_MB=2048
+  # Wall-clock bound per crawl (katana -ct). Crawl was 57% of all sweep time in the
+  # 2026-10-09 run, with one target running 18 h. JSINTEL_CRAWL_DURATION takes katana
+  # durations (90s, 15m, 1h); 0 or "off" disables the bound.
+  KATANA_CT=()
+  CRAWL_DURATION="${JSINTEL_CRAWL_DURATION:-15m}"
+  if [[ "$CRAWL_DURATION" =~ ^[1-9][0-9]*[smhd]$ ]]; then
+    KATANA_CT=(-ct "$CRAWL_DURATION")
+  elif [[ "$CRAWL_DURATION" != "0" && "$CRAWL_DURATION" != "off" ]]; then
+    log_warn "Ignoring JSINTEL_CRAWL_DURATION=$CRAWL_DURATION (want e.g. 90s, 15m, 1h; 0 = unbounded); using 15m"
+    KATANA_CT=(-ct 15m)
+  fi
+  # katana (Go) bypasses the proxychains preload, so it must be given the proxy.
+  # Loopback seeds are exempt, matching the managed proxychains config's localnet
+  # rule (a SOCKS proxy such as Tor cannot reach the operator's own 127.0.0.0/8).
+  KATANA_PROXY=()
+  if [[ -n "${JSINTEL_PROXY_URL:-}" ]] \
+     && while IFS= read -r seed; do host_of "$seed"; done < "$SEEDS" \
+          | grep -qvE '^(127\.[0-9.]+|localhost|\[?::1\]?)$'; then
+    KATANA_PROXY=(-proxy "$JSINTEL_PROXY_URL")
+  fi
   KATANA_RC=0
   (
     (( KATANA_VMEM_MB > 0 )) && ulimit -v $(( KATANA_VMEM_MB * 1024 ))
-    exec katana -list "$SEEDS" -d "$DEPTH" -jc -jsl -silent -c "$THREADS" ${KATANA_SCOPE[@]+"${KATANA_SCOPE[@]}"} ${KATANA_AUTH[@]+"${KATANA_AUTH[@]}"}
+    exec katana -list "$SEEDS" -d "$DEPTH" -jc -jsl -silent -c "$THREADS" ${KATANA_CT[@]+"${KATANA_CT[@]}"} ${KATANA_PROXY[@]+"${KATANA_PROXY[@]}"} ${KATANA_SCOPE[@]+"${KATANA_SCOPE[@]}"} ${KATANA_AUTH[@]+"${KATANA_AUTH[@]}"}
   ) </dev/null 2>>"$LOG_FILE" > "$RAWCRAWL" || KATANA_RC=$?
   if (( KATANA_RC != 0 )); then
     log_warn "katana exited with status $KATANA_RC (memory cap ${KATANA_VMEM_MB} MB; 0 = none); crawl results may be incomplete"

@@ -36,7 +36,9 @@ _PATH_RE = re.compile(r"""(?<![\w/])/(?:api|graphql|rest|v[0-9]+|admin|login|log
 # unbounded `<form\b[^>]*>` or `(.*?)</form>` on a large *unterminated* input
 # backtracks quadratically (a 5MB run of `<form ` hangs for minutes). Bounding both
 # the open-tag length and the captured body keeps every scan linear.
-_FORM_RE = re.compile(r"<form\b[^>]{0,1000}>(.{0,20000}?)</form>", re.I | re.S)
+# Captures (opening tag, body) together: looking the tag up afterwards by searching
+# for the body gave every form with identical inner HTML the FIRST form's action.
+_FORM_RE = re.compile(r"(<form\b[^>]{0,1000}>)(.{0,20000}?)</form>", re.I | re.S)
 _FORM_ATTR_RE = re.compile(r"""\b(action|method)\s*=\s*["']([^"']*)["']""", re.I)
 _INPUT_RE = re.compile(r"""<(?:input|select|textarea)\b[^>]{0,1000}\bname\s*=\s*["']([^"']+)["']""", re.I)
 _SCRIPT_RE = re.compile(r"<script\b[^>]{0,1000}>(.{0,200000}?)</script>", re.I | re.S)
@@ -153,8 +155,8 @@ class PageAnalyzer(Analyzer):
                                       severity="low", value=f"param '{name}' in {target[:120]}", sink="query-param")
 
         # 3) Forms → endpoints + an informational finding (attack/fuzz surface).
-        for body in self._capped(_FORM_RE.findall(source)):
-            attrs = {k.lower(): v for k, v in _FORM_ATTR_RE.findall(_form_open(source, body))}
+        for open_tag, body in self._capped(_FORM_RE.findall(source)):
+            attrs = {k.lower(): v for k, v in _FORM_ATTR_RE.findall(open_tag)}
             action = (attrs.get("action") or "").split("#", 1)[0].strip()
             method = (attrs.get("method") or "GET").upper()
             fields = sorted(set(_INPUT_RE.findall(body)))[:40]
@@ -167,8 +169,11 @@ class PageAnalyzer(Analyzer):
             yield SecurityFinding(asset_url=asset.url, finding_type="html_form",
                                   severity="info", value=desc[:300])
             # A state-changing (POST) form with no anti-CSRF token field is a CSRF
-            # candidate. Password/login forms are the highest-value cases.
-            if method == "POST" and not any(_CSRF_FIELD.search(f) for f in fields):
+            # candidate. Password/login forms are the highest-value cases. Only the
+            # site's own endpoints count: a form posting to a third-party SaaS (e.g. a
+            # HubSpot api/forms action on community.dune.com) is that vendor's surface.
+            if (method == "POST" and _same_site(action, asset.url)
+                    and not any(_CSRF_FIELD.search(f) for f in fields)):
                 yield SecurityFinding(asset_url=asset.url, finding_type="form_without_csrf_token",
                                       severity="low",
                                       value=f"POST form action='{action or '(self)'}' has no anti-CSRF token field",
@@ -186,13 +191,3 @@ class PageAnalyzer(Analyzer):
     @staticmethod
     def _capped(items):
         return list(items)[:_CAP]
-
-
-def _form_open(source: str, body: str) -> str:
-    """Return the ``<form ...>`` opening tag that precedes a captured form body."""
-    idx = source.find(body)
-    if idx == -1:
-        return "<form>"
-    start = source.rfind("<form", 0, idx)
-    end = source.find(">", start)
-    return source[start:end + 1] if start != -1 and end != -1 else "<form>"

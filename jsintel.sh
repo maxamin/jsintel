@@ -58,6 +58,10 @@ Usage: ./jsintel.sh -i <input_urls> [-o <output_dir>] [-t <threads>] [-s <scope>
       a destructive-endpoint guard (payment/swap/withdraw/delete/logout are skipped).
       Extra options via JSINTEL_FORMS_ARGS (e.g. "--no-submit", "--browser",
       "--deny <term>", "--no-safe-denylist"). Sends live requests -> scope-gated.
+  --reanalyze <dir>  Rebuild an earlier run's results OFFLINE into -o <new dir>:
+      re-extract its downloaded assets with the current analyzers, re-score
+      fuzz.json, rebuild the DB/reports/triage. Sends no requests; the source run
+      is only read. A sweep dir (with targets/) is re-analysed per target.
   --proxychains [conf]  Route ALL outbound traffic (crawl, download, fuzz, forms and
       headless Chromium) through proxychains4 by re-exec'ing the run under it. With no
       value the default proxychains config is used; pass a path to use a specific one.
@@ -68,7 +72,7 @@ EOF
 # getopts handles only single-char flags, so extract these (and their values) into
 # env vars that every request-making stage (crawl, download, fuzz, live analysis)
 # reads via modules/authutil.py. The session is only ever sent to in-scope hosts.
-_pre=(); FORMS="${FORMS:-0}"; PROXYCHAINS=""; while [[ $# -gt 0 ]]; do
+_pre=(); FORMS="${FORMS:-0}"; PROXYCHAINS=""; REANALYZE=""; while [[ $# -gt 0 ]]; do
   case "$1" in
     --cookie)   export JSINTEL_AUTH_COOKIE="${2:-}"; shift 2 ;;
     --cookie=*) export JSINTEL_AUTH_COOKIE="${1#*=}"; shift ;;
@@ -82,6 +86,9 @@ _pre=(); FORMS="${FORMS:-0}"; PROXYCHAINS=""; while [[ $# -gt 0 ]]; do
     # --forms runs the active form-filler / AJAX-spider stage after extraction
     # (submit-by-default; extra args via JSINTEL_FORMS_ARGS).
     --forms)    FORMS=1; shift ;;
+    # --reanalyze <dir> rebuilds an earlier run's results offline into -o <new dir>.
+    --reanalyze)   REANALYZE="${2:-}"; shift 2 ;;
+    --reanalyze=*) REANALYZE="${1#*=}"; shift ;;
     --)         shift; while [[ $# -gt 0 ]]; do _pre+=("$1"); shift; done ;;
     *)          _pre+=("$1"); shift ;;
   esac
@@ -92,13 +99,33 @@ set -- ${_pre[@]+"${_pre[@]}"}
 # downloader, the fuzzer, the form stage and headless Chromium all speak through the
 # proxy chain. proxychains preloads its shim at process launch, so wrapping the whole
 # script is the reliable way to cover in-process and child-process sockets alike.
+# A run started as `proxychains4 ./jsintel.sh ...` (how the 2026-10-09 sweep was
+# launched) is adopted into the same managed mode: the preload is dropped and the run
+# re-exec'd under a managed config, exactly as with --proxychains.
+if [[ -z "${JSINTEL_UNDER_PROXYCHAINS:-}" && "${LD_PRELOAD:-}" == *proxychains* ]]; then
+  PROXYCHAINS="${PROXYCHAINS:-${PROXYCHAINS_CONF_FILE:-1}}"
+  unset LD_PRELOAD
+fi
 if [[ -n "$PROXYCHAINS" && -z "${JSINTEL_UNDER_PROXYCHAINS:-}" ]]; then
   if command -v proxychains4 >/dev/null 2>&1; then PCBIN=proxychains4
   elif command -v proxychains >/dev/null 2>&1; then PCBIN=proxychains
   else die "--proxychains requested but proxychains4 is not installed"; fi
-  PCARGS=(-q); [[ "$PROXYCHAINS" != "1" && "$PROXYCHAINS" != "default" ]] && PCARGS+=(-f "$PROXYCHAINS")
+  # Managed config = the operator's config plus `localnet 127.0.0.0/255.0.0.0`, so
+  # loopback (the forms driver's DevTools socket, lab targets) is never proxied.
+  PCCONF=$(PYTHONPATH="$BASE_DIR" python3 -m modules.proxyutil managed-conf "$PROXYCHAINS") \
+    || die "No proxychains config found (looked for ${PROXYCHAINS/#1/the default})"
+  PCARGS=(-q -f "$PCCONF")
   export JSINTEL_UNDER_PROXYCHAINS=1 FORMS
   exec "$PCBIN" "${PCARGS[@]}" bash "$BASE_DIR/jsintel.sh" ${_pre[@]+"${_pre[@]}"}
+fi
+# Go tools (katana, assetfinder, subfinder, amass) make syscalls directly, so the
+# preload never sees their sockets: under proxychains katana crawled from the
+# operator's own address. They get the chain's proxy explicitly (JSINTEL_PROXY_URL).
+# Fail closed: an unproxiable chain must not silently fall back to direct traffic.
+if [[ -n "${JSINTEL_UNDER_PROXYCHAINS:-}" && -z "${JSINTEL_PROXY_URL:-}" ]]; then
+  JSINTEL_PROXY_URL=$(PYTHONPATH="$BASE_DIR" python3 -m modules.proxyutil proxy-url) \
+    || die "Under proxychains, but its first proxy is not socks4/socks5/http without credentials; Go tools (katana) and Chromium cannot be routed through it"
+  export JSINTEL_PROXY_URL
 fi
 export FORMS
 
@@ -131,6 +158,68 @@ if [[ -n "$MASS_TARGETS" ]]; then
   exec bash "$BASE_DIR/modules/sweep.sh" "$MASS_TARGETS"
 fi
 
+# --- Offline re-analysis: rebuild results from an earlier run, zero network -------
+# Re-extracts the already-downloaded assets with the current analyzers, re-scores
+# fuzz.json, and rebuilds the DB, reports and triage. Results go to a NEW -o
+# directory (the source run is only read; its asset files are referenced in place),
+# so false-positive fixes reach old runs without re-scanning anyone. A sweep dir
+# (one with targets/) is re-analysed target by target.
+if [[ -n "$REANALYZE" ]]; then
+  [[ -d "$REANALYZE" ]] || die "--reanalyze: no such directory: $REANALYZE"
+  SRC="$(cd "$REANALYZE" && pwd)"
+  mkdir -p "$OUTPUT_DIR"; OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
+  [[ "$OUTPUT_DIR" != "$SRC" && "$OUTPUT_DIR/" != "$SRC/"* ]] \
+    || die "--reanalyze writes to a new directory: pass -o <dir> outside $SRC"
+  if [[ -d "$SRC/targets" ]]; then
+    mkdir -p "$OUTPUT_DIR/logs"; LOG_FILE="$OUTPUT_DIR/logs/jsintel.log"; export LOG_FILE
+    PAR="${JSINTEL_SWEEP_PARALLEL:-3}"; [[ "$PAR" =~ ^[1-9][0-9]*$ ]] || PAR=3
+    log_info "Re-analysing sweep $SRC -> $OUTPUT_DIR (offline, parallelism $PAR)"
+    mapfile -t RTARGETS < <(cd "$SRC/targets" && for d in */; do [[ -f "$d/reports/assets.json" ]] && printf '%s\n' "${d%/}"; done)
+    running=0
+    for t in ${RTARGETS[@]+"${RTARGETS[@]}"}; do
+      ( mkdir -p "$OUTPUT_DIR/targets/$t"
+        if bash "$BASE_DIR/jsintel.sh" --reanalyze "$SRC/targets/$t" -o "$OUTPUT_DIR/targets/$t" \
+             >"$OUTPUT_DIR/targets/$t/reanalyze.log" 2>&1; then
+          cp -f "$SRC/targets/$t/.sweep_status" "$OUTPUT_DIR/targets/$t/.sweep_status" 2>/dev/null || true
+        else
+          printf 'failed reanalyze\n' > "$OUTPUT_DIR/targets/$t/.sweep_status"
+        fi ) &
+      running=$((running + 1))
+      if (( running >= PAR )); then wait -n 2>/dev/null || wait; running=$((running - 1)); fi
+    done
+    wait
+    PYTHONPATH="$BASE_DIR${PYTHONPATH:+:$PYTHONPATH}" \
+      python3 -m modules.sweep_aggregate --output "$OUTPUT_DIR" ${RTARGETS[@]+"${RTARGETS[@]}"}
+    log_info "Sweep re-analysis complete (${#RTARGETS[@]} targets). Aggregate: $OUTPUT_DIR/reports/sweep_summary.md"
+    exit 0
+  fi
+  [[ -f "$SRC/reports/assets.json" ]] || die "--reanalyze: $SRC has no reports/assets.json"
+  [[ ! -e "$OUTPUT_DIR/reports/summary.json" ]] || die "--reanalyze: $OUTPUT_DIR already holds results; use a new directory"
+  mkdir -p "$OUTPUT_DIR"/{assets,logs,database,reports}
+  LOG_FILE="$OUTPUT_DIR/logs/jsintel.log"; export LOG_FILE OUTPUT_DIR
+  CONFIG="$BASE_DIR/config/config.yaml"; export CONFIG
+  THREADS="${THREADS:-$(config_value threads 50)}"; export THREADS
+  log_info "Re-analysing $SRC -> $OUTPUT_DIR (offline; no requests are sent)"
+  # Carry over everything except what extraction and reporting regenerate.
+  for f in "$SRC"/reports/*.json "$SRC"/reports/.discovered.json; do
+    [[ -f "$f" ]] || continue
+    case "$(basename "$f")" in
+      urls.json|endpoints.json|websocket.json|imports.json|frameworks.json|findings.json|code_intel.json|errors.json|summary.json|triage.json) ;;
+      *) cp -f "$f" "$OUTPUT_DIR/reports/" ;;
+    esac
+  done
+  for f in "$SRC"/assets/*.txt; do [[ -f "$f" ]] && cp -f "$f" "$OUTPUT_DIR/assets/"; done
+  bash "$BASE_DIR/modules/extractor.sh" "$OUTPUT_DIR/reports/assets.json"
+  if [[ -f "$OUTPUT_DIR/reports/fuzz.json" ]]; then
+    PYTHONPATH="$BASE_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m modules.fuzzer --output "$OUTPUT_DIR" --rescore 2>>"$LOG_FILE"
+  fi
+  python3 "$BASE_DIR/modules/database.py" --output "$OUTPUT_DIR" --config "$CONFIG" ingest
+  python3 "$BASE_DIR/modules/reporter.py" --output "$OUTPUT_DIR" --config "$CONFIG"
+  python3 "$BASE_DIR/modules/triage.py" --output "$OUTPUT_DIR" --config "$CONFIG"
+  log_info "Re-analysis complete. Reports: $OUTPUT_DIR/reports"
+  exit 0
+fi
+
 [[ -n "$INPUT" ]] || { usage; exit 2; }
 
 require_command python3
@@ -142,6 +231,18 @@ THREADS="${THREADS:-$(config_value threads 50)}"; export THREADS
 VERBOSE="${VERBOSE:-0}"; export VERBOSE
 
 log_info "JSIntel Phase 1 started (workers: $THREADS)"
+
+# Per-stage telemetry: reports/stages.tsv (name, seconds, exit code), folded into
+# summary.json by the reporter and rolled up by sweep_aggregate. Recovering stage
+# timings for the 2026-10-09 sweep meant parsing 13k logs, and stages that produced
+# nothing on every target (ports, screenshots) went unnoticed for a week.
+STAGES_TSV="$OUTPUT_DIR/reports/stages.tsv"; : > "$STAGES_TSV"
+stage() {  # stage NAME CMD...: run CMD, record its time and status, return its status
+  local name="$1" t0=$SECONDS rc=0; shift
+  "$@" || rc=$?
+  printf '%s\t%s\t%s\n' "$name" "$((SECONDS - t0))" "$rc" >> "$STAGES_TSV"
+  return "$rc"
+}
 if [[ -n "${JSINTEL_AUTH_COOKIE:-}" || -n "${JSINTEL_AUTH_BEARER:-}" ]]; then
   log_info "Authenticated mode: $(python3 "$BASE_DIR/modules/authutil.py" --describe 2>/dev/null || echo 'session supplied')"
 fi
@@ -168,12 +269,12 @@ if [[ -z "${CRAWL_SCOPE:-}" && ( -n "$SUB_SCOPE" || -n "$PORT_SCOPE" || -n "$FUZ
 fi
 
 if [[ -n "$SUB_SCOPE" ]]; then
-  bash "$BASE_DIR/modules/subdomains.sh" "$SUB_SCOPE"
+  stage subdomains bash "$BASE_DIR/modules/subdomains.sh" "$SUB_SCOPE"
 fi
 if [[ -n "$PORT_SCOPE" ]]; then
   # Port-scan the in-scope hosts (subdomains discovered above, plus the seeds) for
   # web services on non-standard ports; confirmed services become extra seeds.
-  bash "$BASE_DIR/modules/portscan.sh" "$PORT_SCOPE" "$INPUT"
+  stage ports bash "$BASE_DIR/modules/portscan.sh" "$PORT_SCOPE" "$INPUT"
 fi
 if [[ -n "$SUB_SCOPE" || -n "$PORT_SCOPE" ]]; then
   # Combine the original seeds with the discovered live subdomains and any web
@@ -193,37 +294,40 @@ if [[ -n "$SUB_SCOPE" || -n "$PORT_SCOPE" ]]; then
   log_info "Crawling $(wc -l < "$SEEDS" | tr -d ' ') combined seeds (input + subdomains + services)"
 fi
 
-bash "$BASE_DIR/modules/crawler.sh" "$CRAWL_INPUT"
-bash "$BASE_DIR/modules/classifier.sh" "$OUTPUT_DIR/assets/crawled_urls.txt"
-bash "$BASE_DIR/modules/downloader.sh" "$OUTPUT_DIR/reports/assets.json"
-bash "$BASE_DIR/modules/extractor.sh" "$OUTPUT_DIR/reports/assets.json"
+stage crawl bash "$BASE_DIR/modules/crawler.sh" "$CRAWL_INPUT"
+stage classify bash "$BASE_DIR/modules/classifier.sh" "$OUTPUT_DIR/assets/crawled_urls.txt"
+stage download bash "$BASE_DIR/modules/downloader.sh" "$OUTPUT_DIR/reports/assets.json"
+stage extract bash "$BASE_DIR/modules/extractor.sh" "$OUTPUT_DIR/reports/assets.json"
 # Feedback discovery: fetch newly-referenced in-scope assets (endpoints/URLs an extracted
 # asset points at that the crawler never saw) and re-extract. Scope-safe (only new PATHS on
 # hosts already fetched), budget-capped, and bounded to JSINTEL_DISCOVER_ROUNDS rounds
 # (default 3; set 0 to disable). The re-extract only runs when a round found something.
 DISCOVER_ROUNDS="${JSINTEL_DISCOVER_ROUNDS:-3}"
-_round=1
+_round=1; _disc_t0=$SECONDS
 while [[ "$_round" -le "$DISCOVER_ROUNDS" ]]; do
   _added=$(python3 "$BASE_DIR/modules/discover.py" --output "$OUTPUT_DIR" --config "$CONFIG" \
              --limit "${JSINTEL_DISCOVER_LIMIT:-200}" 2>>"$LOG_FILE" || echo 0)
   log_info "Discovery round $_round: fetched ${_added:-0} new in-scope asset(s)"
   [[ "${_added:-0}" -gt 0 ]] || break
-  bash "$BASE_DIR/modules/extractor.sh" "$OUTPUT_DIR/reports/assets.json"
+  stage extract bash "$BASE_DIR/modules/extractor.sh" "$OUTPUT_DIR/reports/assets.json"
   _round=$((_round + 1))
 done
+printf 'discovery\t%s\t0\n' "$((SECONDS - _disc_t0))" >> "$STAGES_TSV"
 # Live-service analysis (security headers, GraphQL introspection, JWTs) against the
 # in-scope services discovered by the port scan. No-op if no reports/ports.json.
 if [[ -s "$OUTPUT_DIR/reports/ports.json" ]]; then
   log_info "Analyzing live services (security headers / GraphQL / JWT)"
+  _t0=$SECONDS
   python3 "$BASE_DIR/modules/liveanalysis.py" --output "$OUTPUT_DIR" --config "$CONFIG" \
     2>&1 | tee -a "$LOG_FILE" || log_info "Live-service analysis skipped (non-fatal)"
+  printf 'live\t%s\t0\n' "$((SECONDS - _t0))" >> "$STAGES_TSV"
 fi
 if [[ "$WEBSHOT" == "1" ]]; then
   # After extraction so the gallery can flag services whose host yielded high findings.
-  bash "$BASE_DIR/modules/webshot.sh" "$INPUT"
+  stage webshot bash "$BASE_DIR/modules/webshot.sh" "$INPUT"
 fi
 if [[ -n "$FUZZ_SCOPE" ]]; then
-  bash "$BASE_DIR/modules/fuzzer.sh" "$FUZZ_SCOPE"
+  stage fuzz bash "$BASE_DIR/modules/fuzzer.sh" "$FUZZ_SCOPE"
 fi
 # Active form stage (opt-in via --forms): fill discovered pages' forms with in-norm
 # synthetic data and trigger their JS/XHR. Scoped to the authorized scope; submit-by-
@@ -238,10 +342,12 @@ if [[ "$FORMS" == "1" ]]; then
   # shellcheck disable=SC2206
   FORM_ARGS+=(${JSINTEL_FORMS_ARGS:-})
   log_info "Active form stage (fill + trigger JS/XHR; scope: ${FORMS_SCOPE:-<pages in output>})"
+  _t0=$SECONDS
   PYTHONPATH="$BASE_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m modules.forms.main "${FORM_ARGS[@]}" \
     2>&1 | tee -a "$LOG_FILE" || log_info "Form stage skipped (non-fatal)"
+  printf 'forms\t%s\t0\n' "$((SECONDS - _t0))" >> "$STAGES_TSV"
 fi
-python3 "$BASE_DIR/modules/database.py" --output "$OUTPUT_DIR" --config "$CONFIG" ingest
+stage database python3 "$BASE_DIR/modules/database.py" --output "$OUTPUT_DIR" --config "$CONFIG" ingest
 python3 "$BASE_DIR/modules/reporter.py" --output "$OUTPUT_DIR" --config "$CONFIG"
 # Unified per-host triage view (joins services + endpoints + findings, ranked).
 python3 "$BASE_DIR/modules/triage.py" --output "$OUTPUT_DIR" --config "$CONFIG"

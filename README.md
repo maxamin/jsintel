@@ -24,14 +24,22 @@ view.
 - **JavaScript-aware crawling** (Katana) for `.js`, `.mjs`, source maps, JSON,
   WebAssembly, workers, and manifests, with scope-anchored URL normalization.
   katana runs under an address-space cap (`JSINTEL_KATANA_MAX_VMEM_MB`, default 8192;
-  0 disables) so one runaway crawl cannot OOM the box; an abnormal exit is logged.
+  0 disables) and a wall-clock bound (`JSINTEL_CRAWL_DURATION`, default `15m`; 0 = none),
+  so one runaway crawl cannot OOM the box; an abnormal exit is logged. Self-repeating
+  chunk URLs (`/static/chunks/static/chunks/…`) that katana mis-resolves are dropped.
 - **Subdomain enumeration** (`-s`) over an authorized scope, liveness-probed and
   added to the crawl as extra seeds.
 - **Web-service port scanning** (`-p`) that finds HTTP(S) services on
   **non-standard ports** (not just 80/443), confirms which speak HTTP, detects CDN
   fronting, and feeds confirmed services into the crawl and fuzzer.
 - **Parallel, resumable downloads** with SHA-256, byte size, MIME type, and
-  failure/timeout/retry handling.
+  failure/timeout/retry handling. A per-host circuit breaker stops fetching from a host
+  after `JSINTEL_DOWNLOAD_BLOCK_AFTER` (default 25) consecutive 403/429 answers; the rest
+  are recorded as `blocked` without a request.
+- **Offline re-analysis** (`--reanalyze <old run> -o <new dir>`): re-extract an earlier
+  run's downloaded assets with the current analyzers, re-score `fuzz.json`, rebuild the
+  DB, reports and triage. No requests are sent, and the old run is only read. Works on
+  sweep directories too.
 - **Streaming extraction engine** (`modules/extractor/`) with independently
   discovered analyzer plugins and typed findings: URLs, API/GraphQL-like paths,
   WebSocket URLs, imports/requires, framework signatures, hardcoded secrets, and
@@ -107,10 +115,12 @@ defaults to the `config/config.yaml` value (50).
 | `-p <scope>` | Port-scan in-scope hosts for web services on non-standard ports; writes `assets/services.txt` and `reports/ports.json`. Override ports with `JSINTEL_PORTS` (e.g. `"80,443,8000-8100"`). |
 | `-w` | Screenshot discovered services into a clustered gallery. Pairs with `-p`. |
 | `-f <scope>` | Enable content-discovery fuzzing against the authorized scope. Extra options via `JSINTEL_FUZZ_ARGS` (e.g. `--dry-run`, `--offline`). |
-| `-m <file>` | **Mass sweep**: run the full pipeline per target into `<output>/targets/<domain>/` and write an aggregate `sweep_summary.{json,md}`. Enable per-target stages with `-S/-P/-W/-F`. `JSINTEL_SWEEP_PARALLEL` (default 3) sets concurrency; `JSINTEL_SWEEP_RESUME=1` continues an interrupted sweep in the same output dir (skips targets already `ok`); a target whose stage crashes on a signal is retried once. |
+| `-m <file>` | **Mass sweep**: run the full pipeline per target into `<output>/targets/<domain>/` and write an aggregate `sweep_summary.{json,md}`. Enable per-target stages with `-S/-P/-W/-F`. `JSINTEL_SWEEP_PARALLEL` (default 3) sets concurrency; `JSINTEL_SWEEP_RESUME=1` continues an interrupted sweep in the same output dir (skips targets already `ok`); a target whose stage crashes on a signal is retried once. Before running, a **pre-filter** drops hosts with no HTTP(S) answer and collapses wildcard-DNS duplicates to one representative (`JSINTEL_SWEEP_PREFILTER=full`/`wildcard`/`off`; decisions in `reports/prefilter.json`). Non-hostnames (`_srv._tcp.…`) are rejected; `JSINTEL_SWEEP_DENY` takes globs to skip (e.g. `*.files.wordpress.com`). Per-stage timings land in each `summary.json` and the sweep summary, and the sweep warns when an enabled stage (ports, screenshots, downloads) produced nothing across the first 50 targets. |
 | `-v` | Verbose: surface tool output and warn about silent failures. |
 | `--cookie <value>` | Authenticated mode: send this `Cookie` header (e.g. `"PHPSESSID=…; security=low"`) with every request across all stages. |
 | `--jwt <token>` | Authenticated mode: send `Authorization: Bearer <token>` with every request. Combinable with `--cookie`. |
+| `--proxychains [conf]` | Route all traffic through proxychains4. Starting the run as `proxychains4 ./jsintel.sh …` is adopted into the same mode. The run uses a managed copy of the config with loopback excluded (`localnet 127.0.0.0/8`). Go tools (katana, assetfinder, subfinder, amass) bypass the preload, so they get the chain's proxy explicitly. The port scan connect-scans hostnames through the proxy instead of using nmap. Chromium (screenshots, forms) is started without the preload and with `--proxy-server`. If the first proxy is not socks4/socks5/http without credentials, the run refuses to start rather than send direct traffic. |
+| `--reanalyze <dir>` | Rebuild an earlier run (or sweep) **offline** into `-o <new dir>`: re-extract its downloaded assets, re-score `fuzz.json`, rebuild DB/reports/triage. Sends no requests and only reads the source run. |
 
 ### Authenticated targets
 

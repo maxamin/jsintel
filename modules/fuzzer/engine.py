@@ -9,6 +9,7 @@ in, which keeps the whole pipeline testable offline.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 from collections import defaultdict
@@ -18,7 +19,7 @@ from pathlib import Path
 from .candidates import base_and_path, candidates_for
 from .classify import classify_path
 from .models import Candidate, Category, FuzzConfig, FuzzSummary, ProbeResult
-from .prober import Prober
+from .prober import Prober, suppress_repeated
 from .scope import Scope
 from .transport import Transport, UrllibTransport
 from .wordlists import WordlistProvider
@@ -142,6 +143,42 @@ def write_report(reports_dir: Path, results: list[ProbeResult], summary: FuzzSum
         json.dumps(summary.to_record(), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def rescore(reports_dir: Path) -> FuzzSummary | None:
+    """Re-apply the current result classification to an existing ``fuzz.json``.
+
+    Sends no requests: it re-runs repeated-response suppression over the stored
+    probe results, so runs made before the 2026-10-15 fix (e.g. 16,027 "interesting"
+    identical 403s on one sweep target) are corrected offline. Returns ``None`` when
+    there is no ``fuzz.json`` to rescore.
+    """
+    try:
+        records = json.loads((reports_dir / "fuzz.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(records, list):
+        return None
+    names = {f.name for f in dataclasses.fields(ProbeResult)}
+    results = [ProbeResult(**{k: v for k, v in r.items() if k in names})
+               for r in records if isinstance(r, dict) and r.get("url")]
+    results = suppress_repeated(results)
+    try:
+        old = json.loads((reports_dir / "fuzz_summary.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        old = {}
+    old = old if isinstance(old, dict) else {}
+    summary = FuzzSummary(
+        findings_read=int(old.get("findings_read", 0)),
+        in_scope_origins=int(old.get("in_scope_origins", 0)),
+        candidates=int(old.get("candidates", len(results))),
+        requested=sum(1 for r in results if r.note not in ("dry-run", "out-of-scope")),
+        interesting=sum(1 for r in results if r.interesting),
+        errors=sum(1 for r in results if r.error),
+        by_category=dict(old.get("by_category") or {}),
+    )
+    write_report(reports_dir, results, summary)
+    return summary
 
 
 def run(

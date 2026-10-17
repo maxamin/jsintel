@@ -49,7 +49,30 @@ def main(output: Path) -> None:
             shots=[]
     shots_captured=sum(1 for s in shots if s.get('file'))
     shots_clusters=len({s.get('cluster') for s in shots if s.get('file')})
-    summary={'total_assets':total,'javascript_count':javascript,'endpoint_count':endpoints,'technology_count':technologies,'finding_count':findings,'security_finding_count':security_findings,'findings_by_severity':by_severity,'fuzz_probed':fuzz_probed,'fuzz_interesting':fuzz_hits,'web_services':services_total,'web_services_nonstandard_port':services_alt,'screenshots':shots_captured,'screenshot_clusters':shots_clusters,'file_statistics':by_type}
+    # Stage telemetry: time/exit code per stage (reports/stages.tsv from jsintel.sh) and
+    # what each stage produced, so a sweep can tell 'nothing there' from 'stage broken'.
+    stages={}
+    try:
+        for line in (reports/'stages.tsv').read_text(encoding='utf-8').splitlines():
+            parts=line.split('\t')
+            if len(parts)!=3 or not parts[1].isdigit(): continue
+            st=stages.setdefault(parts[0],{'seconds':0,'rc':0,'runs':0})
+            st['seconds']+=int(parts[1]); st['runs']+=1; st['rc']=st['rc'] or int(parts[2] or 0)
+    except (OSError,ValueError):
+        pass
+    try:
+        crawl_kept=sum(1 for l in (output/'assets'/'crawled_urls.txt').read_text(encoding='utf-8').splitlines() if l.strip())
+    except OSError:
+        crawl_kept=0
+    try:
+        manifest=json.loads((reports/'assets.json').read_text(encoding='utf-8'))
+    except (OSError,json.JSONDecodeError):
+        manifest=[]
+    downloads={}
+    for a in manifest if isinstance(manifest,list) else []:
+        if isinstance(a,dict): downloads[a.get('status') or 'pending']=downloads.get(a.get('status') or 'pending',0)+1
+    pipeline={'crawl_kept':crawl_kept,'downloads':downloads,'screenshots_attempted':len(shots),'screenshots_captured':shots_captured}
+    summary={'total_assets':total,'javascript_count':javascript,'endpoint_count':endpoints,'technology_count':technologies,'finding_count':findings,'security_finding_count':security_findings,'findings_by_severity':by_severity,'fuzz_probed':fuzz_probed,'fuzz_interesting':fuzz_hits,'web_services':services_total,'web_services_nonstandard_port':services_alt,'screenshots':shots_captured,'screenshot_clusters':shots_clusters,'file_statistics':by_type,'pipeline':pipeline,'stages':stages}
     (reports/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
     sev_order=['critical','high','medium','low','info']
     sev_line=', '.join(f'{sev} {by_severity[sev]}' for sev in sev_order if sev in by_severity) or 'none'

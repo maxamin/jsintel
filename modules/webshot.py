@@ -31,6 +31,8 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from modules.proxyutil import chromium_launch
+
 LOGGER = logging.getLogger("jsintel.webshot")
 
 CHROMIUM_CANDIDATES = ("chromium", "chromium-browser", "google-chrome", "chrome", "google-chrome-stable")
@@ -65,8 +67,14 @@ def render_screenshot(
     width: int = 1440,
     height: int = 900,
     timeout: float = 30.0,
+    env: dict[str, str] | None = None,
+    extra_args: tuple[str, ...] | list[str] = (),
 ) -> bool:
-    """Render ``url`` to ``out_path`` with headless Chromium. Return success."""
+    """Render ``url`` to ``out_path`` with headless Chromium. Return success.
+
+    ``env``/``extra_args`` come from ``proxyutil.chromium_launch`` so a run under
+    proxychains uses Chromium's own proxy support instead of the preload it crashes on.
+    """
     # A unique profile dir per call avoids "profile already in use" clashes when
     # several Chromium instances run concurrently.
     profile = Path(tempfile.mkdtemp(prefix="jsintel-chrome-"))
@@ -78,10 +86,11 @@ def render_screenshot(
         f"--window-size={width},{height}",
         "--virtual-time-budget=8000",
         f"--screenshot={out_path}",
+        *extra_args,
         url,
     ]
     try:
-        subprocess.run(cmd, capture_output=True, timeout=timeout)
+        subprocess.run(cmd, capture_output=True, timeout=timeout, env=env)
     except (OSError, subprocess.TimeoutExpired):
         return False
     finally:
@@ -307,11 +316,20 @@ def run(
             LOGGER.warning("No Chromium/Chrome found; skipping screenshots")
             (reports_dir / "screenshots.json").write_text("[]\n", encoding="utf-8")
             return {"services": len(urls), "captured": 0, "clusters": 0, "engine": "none"}
-        engine = binary
+        launch = chromium_launch()
+        if launch is None:
+            LOGGER.warning("Running under proxychains but no usable proxy (socks4/socks5/http, "
+                           "no credentials) in its config; skipping screenshots rather than "
+                           "letting Chromium connect directly")
+            (reports_dir / "screenshots.json").write_text("[]\n", encoding="utf-8")
+            return {"services": len(urls), "captured": 0, "clusters": 0, "engine": "none"}
+        launch_env, launch_args = launch
+        engine = binary + (" via " + launch_args[0].split("=", 1)[1] if launch_args else "")
 
         def renderer(url, out_path):  # noqa: ANN001
-            return render_screenshot(url, out_path, chromium=binary,
-                                     width=width, height=height, timeout=timeout)
+            return render_screenshot(url, out_path, chromium=binary, width=width,
+                                     height=height, timeout=timeout, env=launch_env,
+                                     extra_args=launch_args)
     else:
         engine = "injected"
 

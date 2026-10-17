@@ -13,7 +13,11 @@ field, grep all of `modules/`, `tests/`, and `integrations/`.
 | `websocket.json` | extractor | `{asset_url, url, kind:"websocket"}` |
 | `imports.json` | extractor | `{asset_url, module}` |
 | `frameworks.json` | extractor | `{asset_url, technology, evidence}` |
-| `findings.json` | extractor | `{asset_url, finding_type, severity, value, source, sink}` |
+| `findings.json` | extractor | `{asset_url, finding_type, severity, value, source, sink}`: security and recon signal only |
+| `code_intel.json` | extractor | Same shape, holding `call_graph`, `class`, `export` and `cross_asset_*`. `SecurityFinding.__post_init__` routes `CODE_INTEL_TYPES` here. They were 95% of all "findings" in the sweep. Not ingested into the DB. |
+| `stages.tsv` | jsintel.sh `stage` | `name<TAB>seconds<TAB>rc` per stage run; folded into `summary.json` `stages` |
+| `summary.json` `pipeline`/`stages` | reporter | `crawl_kept`, `downloads` by status (`downloaded`/`failed`/`blocked`), `screenshots_attempted/captured`; per-stage `{seconds, rc, runs}` |
+| `prefilter.json` (sweep) | sweep_prefilter | per-run counts, wildcard parents with their representative, `skipped: {target: reason}` |
 | `errors.json` | extractor | `{asset_url, analyzer, message}` |
 | `security.json` | liveanalysis | same shape as findings, `source:"live-service"`, `asset_url` = service URL |
 | `api_spec_endpoints.json` | liveanalysis | endpoint records harvested from OpenAPI `paths` |

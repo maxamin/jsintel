@@ -33,12 +33,33 @@ RESUME="${JSINTEL_SWEEP_RESUME:-0}"
 
 # --- Normalise the target list ------------------------------------------------
 # Accept bare domains or URLs; strip scheme/path/port; drop comments/blanks.
+# Only real hostnames survive: LDH labels, no leading/trailing "-", alphabetic TLD.
+# Underscore names are DNS service/wildcard records, not web hosts -- the
+# 2026-10-09 list carried _wildcard.yoca.sh and _carddavs._tcp.<domain>.
+# JSINTEL_SWEEP_DENY is an optional comma/space list of shell globs to skip, e.g.
+# "*.files.wordpress.com,*.aspmx.l.google.com" (shared platforms and mail-only
+# names: *.files.wordpress.com was 396 of that sweep's 474 katana OOM kills).
 mapfile -t TARGETS < <(
   sed -E 's/\r$//; s/#.*$//' "$TARGETS_FILE" \
-    | sed -E 's#^[a-zA-Z]+://##; s#/.*$##; s#:[0-9]+$##; s#.*@##' \
-    | tr 'A-Z' 'a-z' | grep -E '^[a-z0-9._-]+\.[a-z]+$' | sort -u
+    | sed -E 's#^[a-zA-Z]+://##; s#/.*$##; s#:[0-9]+$##; s#.*@##; s#\.$##' \
+    | tr 'A-Z' 'a-z' | grep -E '^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$' | sort -u
 )
 [[ ${#TARGETS[@]} -gt 0 ]] || die "No valid target domains parsed from: $TARGETS_FILE"
+if [[ -n "${JSINTEL_SWEEP_DENY:-}" ]]; then
+  read -r -a DENY <<<"${JSINTEL_SWEEP_DENY//,/ }"
+  KEPT=()
+  for t in "${TARGETS[@]}"; do
+    denied=0
+    for pat in "${DENY[@]}"; do
+      # shellcheck disable=SC2053
+      [[ "$t" == $pat ]] && { denied=1; break; }
+    done
+    (( denied )) || KEPT+=("$t")
+  done
+  log_info "Deny-list (JSINTEL_SWEEP_DENY) removed $(( ${#TARGETS[@]} - ${#KEPT[@]} )) target(s)"
+  TARGETS=(${KEPT[@]+"${KEPT[@]}"})
+  [[ ${#TARGETS[@]} -gt 0 ]] || die "Every target was removed by JSINTEL_SWEEP_DENY"
+fi
 
 STAGES="crawl+extract"
 [[ "$SWEEP_SUBS" == "1" ]] && STAGES="subs+$STAGES"
@@ -93,14 +114,54 @@ run_one() {
   fi
 }
 
+# --- Pre-filter: drop dead hosts and wildcard-DNS duplicates --------------------
+# JSINTEL_SWEEP_PREFILTER: full (default; skip dead + wildcard duplicates), wildcard
+# (only collapse wildcard duplicates -- use with -P to still port-scan hosts that do
+# not answer on 80/443), off. Decisions: reports/prefilter.json. With resume, targets
+# already ok are not probed again.
+PREFILTER="${JSINTEL_SWEEP_PREFILTER:-full}"
+RUN_TARGETS=("${TARGETS[@]}")
+if [[ "$PREFILTER" != "off" && "$PREFILTER" != "0" ]]; then
+  PENDING=()
+  for t in "${TARGETS[@]}"; do
+    if [[ "$RESUME" == "1" && "$(cat "$OUTPUT_DIR/targets/$(sanitize "$t")/.sweep_status" 2>/dev/null)" == "ok" ]]; then
+      continue
+    fi
+    PENDING+=("$t")
+  done
+  if (( ${#PENDING[@]} )); then
+    log_info "Pre-filter ($PREFILTER): probing ${#PENDING[@]} target(s) for liveness and wildcard DNS"
+    if mapfile -t RUN_TARGETS < <(printf '%s\n' "${PENDING[@]}" \
+         | PYTHONPATH="$BASE_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m modules.sweep_prefilter \
+             --output "$OUTPUT_DIR" --mode "$PREFILTER" 2>>"$LOG_FILE") && [[ -s "$OUTPUT_DIR/reports/prefilter.json" ]]; then
+      log_info "Pre-filter kept ${#RUN_TARGETS[@]} of ${#PENDING[@]} target(s); see reports/prefilter.json"
+    else
+      log_warn "Pre-filter failed; running every target"
+      RUN_TARGETS=("${PENDING[@]}")
+    fi
+  else
+    RUN_TARGETS=()
+  fi
+fi
+
 # --- Bounded-parallel execution ----------------------------------------------
-running=0
-for target in "${TARGETS[@]}"; do
+running=0; completed=0
+HEALTH_STAGES=""
+[[ "$SWEEP_PORTS" == "1" ]] && HEALTH_STAGES+="ports,"
+[[ "$SWEEP_WEBSHOT" == "1" ]] && HEALTH_STAGES+="webshot,"
+for target in ${RUN_TARGETS[@]+"${RUN_TARGETS[@]}"}; do
   run_one "$target" &
   running=$((running + 1))
   if (( running >= PARALLEL )); then
     wait -n 2>/dev/null || wait   # wait for any one to finish (fallback: all)
-    running=$((running - 1))
+    running=$((running - 1)); completed=$((completed + 1))
+    # Health check after the first 50 targets, then every 1000: warn loudly when an
+    # enabled stage has produced nothing anywhere (a broken stage, not empty targets).
+    if (( completed == 50 || completed % 1000 == 0 )); then
+      PYTHONPATH="$BASE_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m modules.sweep_aggregate \
+        --output "$OUTPUT_DIR" --health "$HEALTH_STAGES" "${RUN_TARGETS[@]}" 2>/dev/null \
+        | while IFS= read -r line; do log_warn "[sweep] $line"; done || true
+    fi
   fi
 done
 wait

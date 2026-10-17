@@ -1,7 +1,7 @@
 # Testing and the vulnerable lab
 
 ## Unit and integration suite
-- `python3 -m pytest -q`: 49 files, **675 tests**. Offline and deterministic. Network
+- `python3 -m pytest -q`: 47 files, **701 tests**. Offline and deterministic. Network
   is replaced by injected transports, local `http.server` fixtures, and crafted output
   dirs. `tests/conftest.py` puts both the repo root and `src/` on `sys.path`.
 - The operator's coverage goal is every changed line:

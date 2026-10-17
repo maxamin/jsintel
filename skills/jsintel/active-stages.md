@@ -83,6 +83,14 @@ extraction only when a round adds something.
 
 ## Mass sweep (`-m file`, `modules/sweep.sh`)
 Per-target isolation, `JSINTEL_SWEEP_PARALLEL` (3), and stage toggles `-S/-P/-W/-F`.
+Target hygiene: only LDH hostnames survive normalisation (no `_srv._tcp`/`_wildcard` names);
+`JSINTEL_SWEEP_DENY` globs are dropped. Then `modules/sweep_prefilter.py` sends at most 2
+GETs per target plus 1 random-label probe per parent that has 2 or more targets. It drops
+dead hosts and keeps one representative per wildcard parent (fingerprint: status, title
+and redirect with the probed host masked, size within 10%). Ninety-eight percent of the
+2026-10-09 targets yielded at most 1 asset and used 78% of the time. Every 50/1000
+completions `sweep_aggregate --health` warns when ports, screenshots or downloads are
+zero everywhere.
 `JSINTEL_SWEEP_RESUME=1` skips targets whose `.sweep_status` is `ok`. A crash-signal death
 (rc 134/135/137/139) is retried once, and the first log is kept as
 `sweep_target.attempt1.log`. rc 130/143 (operator stop) is never retried. The
@@ -93,6 +101,27 @@ edits corrupt the in-flight targets. Python modules are re-imported per process,
 edits there affect later targets only. Still, be careful.
 
 ## proxychains
-`jsintel.sh --proxychains [conf]` re-execs the whole run under `proxychains4 -q [-f conf]`
-once. The listener and forms CLIs do the same through `proxyutil.maybe_reexec_proxychains`.
-The operator's Tor SOCKS proxy is on 127.0.0.1:9050.
+`jsintel.sh --proxychains [conf]` re-execs the whole run once under
+`proxychains4 -q -f <managed conf>`. A run started as `proxychains4 ./jsintel.sh` (how the
+operator launches sweeps) is detected via `LD_PRELOAD` and adopted the same way. The
+managed config (`proxyutil.managed_conf`) is the operator's config plus
+`localnet 127.0.0.0/255.0.0.0`, so loopback (the forms driver's DevTools socket, lab IPs)
+is never proxied. The listener and forms CLIs re-exec through
+`proxyutil.maybe_reexec_proxychains`. The operator's Tor SOCKS proxy is on
+127.0.0.1:9050.
+
+What the preload does **not** cover, all verified on loopback 2026-10-17:
+- **Go binaries** (katana, assetfinder, subfinder, amass) make syscalls directly. Before
+  the fix, katana crawled from the operator's real IP. `jsintel.sh` exports
+  `JSINTEL_PROXY_URL` (from `python3 -m modules.proxyutil proxy-url`; socks4 becomes
+  socks5 for remote DNS). The crawler passes `-proxy` (skipped when every seed is
+  loopback), and `subdomains.sh` sets `HTTP(S)_PROXY`/`ALL_PROXY` for the enum tools.
+  The run refuses to start if the chain cannot be expressed as a proxy URL.
+- **Raw-packet scanners** (nmap/naabu/masscan): with `proxy_dns`, every host resolves to
+  `224.0.0.1`. `portscan.discover_ports` now connect-scans hostnames through the
+  preload instead (`python-connect (proxychains)`), with a 10 s minimum timeout.
+- **Chromium aborts under the preload** (rc 134). `proxyutil.chromium_launch` strips it
+  and adds `--proxy-server` + `--host-resolver-rules=MAP * ~NOTFOUND`. It returns `None`
+  (webshot skips, the forms driver raises) when no usable proxy exists.
+- Do not export SOCKS proxy env to Python stages: `requests` lacks SOCKS support here
+  (no PySocks). They are already proxied by the preload.

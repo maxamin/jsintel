@@ -30,7 +30,8 @@ class Writer(ABC):
 class JSONWriter(Writer):
     """Continuously write backward-compatible JSON arrays using temp files."""
 
-    reports = ("urls", "endpoints", "websocket", "imports", "frameworks", "findings", "errors")
+    reports = ("urls", "endpoints", "websocket", "imports", "frameworks", "findings",
+               "code_intel", "errors")
 
     def __init__(self, output: Path) -> None:
         output.mkdir(parents=True, exist_ok=True)

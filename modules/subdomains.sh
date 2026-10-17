@@ -43,19 +43,23 @@ log_info "Subdomain enumeration for: $(paste -sd' ' "$DOMAINS_FILE")"
 # --- Enumerate with whatever passive tools are available ---------------------
 RAW=$(mktemp); trap 'rm -f "$DOMAINS_FILE" "$RAW"' EXIT
 ENUM_TIMEOUT=$(config_value subdomain_timeout 120)
+# Go tools bypass the proxychains preload; Go's net/http honours HTTP(S)_PROXY with a
+# socks5:// URL, so under proxychains they are pointed at the chain explicitly.
+GO_PROXY_ENV=()
+[[ -n "${JSINTEL_PROXY_URL:-}" ]] && GO_PROXY_ENV=("HTTP_PROXY=$JSINTEL_PROXY_URL" "HTTPS_PROXY=$JSINTEL_PROXY_URL" "ALL_PROXY=$JSINTEL_PROXY_URL")
 while IFS= read -r domain; do
   [[ -n "$domain" ]] || continue
   printf '%s\n' "$domain" >> "$RAW"   # always include the apex itself
   if command -v assetfinder >/dev/null 2>&1; then
-    timeout "$ENUM_TIMEOUT" assetfinder --subs-only "$domain" 2>>"$LOG_FILE" >> "$RAW" || true
+    timeout "$ENUM_TIMEOUT" env ${GO_PROXY_ENV[@]+"${GO_PROXY_ENV[@]}"} assetfinder --subs-only "$domain" 2>>"$LOG_FILE" >> "$RAW" || true
   fi
   if command -v subfinder >/dev/null 2>&1; then
-    timeout "$ENUM_TIMEOUT" subfinder -silent -d "$domain" 2>>"$LOG_FILE" >> "$RAW" || true
+    timeout "$ENUM_TIMEOUT" env ${GO_PROXY_ENV[@]+"${GO_PROXY_ENV[@]}"} subfinder -silent -d "$domain" 2>>"$LOG_FILE" >> "$RAW" || true
   fi
   if command -v amass >/dev/null 2>&1; then
     # amass draws an animated progress bar on stderr (thousands of "0/1 [___] p/s"
     # carriage-return redraws); sending it to the log floods it, so drop stderr.
-    timeout "$ENUM_TIMEOUT" amass enum -passive -norecursive -d "$domain" 2>/dev/null >> "$RAW" || true
+    timeout "$ENUM_TIMEOUT" env ${GO_PROXY_ENV[@]+"${GO_PROXY_ENV[@]}"} amass enum -passive -norecursive -d "$domain" 2>/dev/null >> "$RAW" || true
   fi
 done < "$DOMAINS_FILE"
 

@@ -1825,3 +1825,95 @@ the query string; metacharacter escaping; and `CRAWL_SCOPE=off`. All 7 cap and r
 tests fail on the previous scripts.
 
 **Suite: 665 → 675 passed (+10).**
+
+---
+
+## MILESTONE — Sweep-log upgrades: proxychains, pre-filter, re-analysis, telemetry (2026-10-17)
+
+Source: a one-pass analysis of all 13,070 target logs and reports in `sweep_2026-10-09/`
+(read only), plus the kernel journal. All ten recommended upgrades shipped. Validation
+used loopback only.
+
+### 1. proxychains broke three stages and leaked the crawl (bug)
+The sweep ran as `proxychains4 -q ./jsintel.sh -m …` with `proxy_dns`.
+- **Port scan:** `getaddrinfo` returned `224.0.0.1` for every host, so nmap scanned
+  that address. Result: **0 web services on all 13,070 targets**, and live analysis 0
+  everywhere.
+- **Chromium aborts under the preload** (rc 134, reproduced). Screenshots were 0/1 on
+  every target (≈25 h), and the forms driver found 0 endpoints.
+- **katana is a Go binary and bypasses the preload.** Verified: under `proxychains4`
+  it reached a loopback server that curl could not. **The sweep's crawl traffic was not
+  proxied.**
+- **Loopback was proxied too**, which breaks the forms driver's DevTools socket.
+
+**Fix (`modules/proxyutil.py`, `jsintel.sh`, `crawler.sh`, `subdomains.sh`,
+`portscan.py`, `webshot.py`, `forms/driver.py`):**
+- An outer `proxychains4` wrap is adopted into the managed mode.
+- The run re-execs under a managed config that adds `localnet 127.0.0.0/8`.
+- `JSINTEL_PROXY_URL` (socks4 upgraded to socks5) goes to katana `-proxy` and to the
+  Go enum tools via `HTTP(S)_PROXY`. Loopback seeds are exempt.
+- The run fails closed when the chain is unusable.
+- The port scan connect-scans hostnames through the preload.
+- Chromium starts without the preload, with `--proxy-server` and
+  `--host-resolver-rules=MAP * ~NOTFOUND`, or is skipped when no proxy is usable.
+
+**Proof:** a full pipeline run (`-p -f -w --forms`) on a loopback site, plain vs
+`proxychains4 -q ./jsintel.sh`: both give 1 service, 1/1 screenshots and 3 crawled
+assets. Before the fix the port scan found 0 services, the crawl kept 1 URL and
+chromium aborted. A logging SOCKS proxy confirmed katana `-proxy` sends hostnames
+(remote DNS).
+
+### 2. Dead and wildcard targets (98% of targets, 78% of time)
+`modules/sweep_prefilter.py` sends one GET per target and one random-label probe per
+parent with at least 2 targets. It skips dead hosts and keeps one representative per
+wildcard parent (fingerprint: status, title, redirect shape with the host masked, size
+within 10%). Wired into `sweep.sh` (`JSINTEL_SWEEP_PREFILTER=full|wildcard|off`; respects
+resume). Decisions go to `reports/prefilter.json` and are shown as `skipped: …` in the
+sweep summary.
+
+### 3. katana chunk artifacts (56% of failed downloads)
+`crawler.sh drop_repeated_segments` drops paths that repeat a two-segment block, such
+as `/static/chunks/static/chunks/x.js`. 47,470 of 84,609 failed fetches had this shape.
+
+### 4. Downloader 403 walls
+Per-host breaker: after `JSINTEL_DOWNLOAD_BLOCK_AFTER` (25) consecutive 403/429
+responses, the rest of that host's assets get `status: blocked` without a request.
+Exhausted-retry 429s count. A success resets the counter. Single-worker test: 5 hits,
+then 35 blocked.
+
+### 5. Offline re-analysis
+`jsintel.sh --reanalyze <old> -o <new>` (and sweep dirs, per target, in parallel)
+re-extracts the stored assets, re-scores `fuzz.json` (`modules.fuzzer --rescore`, i.e.
+`engine.rescore`), and rebuilds the DB, reports and triage. It refuses to write into
+the source. On a copy of `app.wombat.exchange`: fuzz interesting **16,027 → 2**,
+security findings **202 → 33**, findings 27,841 → 33. The source's mtimes were
+unchanged.
+
+### 6. `code_intel.json`
+`call_graph`, `class`, `export` and `cross_asset_*` (95% of all sweep "findings")
+are routed by `SecurityFinding.__post_init__` to `code_intel.json`, which is not
+ingested into the DB.
+
+### 7. CSRF on third-party actions, plus a form-attribute bug found on the way
+`form_without_csrf_token` now requires a same-site action. **Bug:** `_form_open`
+found a form's opening tag by searching for its body, so forms with identical inner
+HTML all received the *first* form's action. `_FORM_RE` now captures (open tag, body)
+together.
+
+### 8-10. katana `-ct`, target hygiene, telemetry
+- **katana `-ct`:** `-ct ${JSINTEL_CRAWL_DURATION:-15m}`. An invalid value falls back to
+  15m and never runs unbounded.
+- **Target hygiene:** only LDH hostnames survive (`_wildcard.*` and `_srv._tcp.*` are
+  rejected), and `JSINTEL_SWEEP_DENY` globs are applied.
+- **Telemetry:** `jsintel.sh stage` writes `reports/stages.tsv`. The reporter adds
+  `stages` and `pipeline` (crawl_kept, downloads by status, screenshots
+  attempted/captured) to `summary.json`. `sweep_aggregate` rolls up per-stage seconds
+  and failures, and `--health` warns after 50 and every 1000 completions when ports,
+  screenshots or downloads are zero everywhere.
+
+**Tests:** `tests/test_sweep_upgrades.py` (23), `test_downloader.py` (+2),
+`test_page_analyzer.py` (+1). The fake sweeps run from a temp cwd, because
+`python3 -m` resolves the current directory before `PYTHONPATH`; that risk is noted
+in recommendations.
+
+**Suite: 675 → 701 passed (+26).**

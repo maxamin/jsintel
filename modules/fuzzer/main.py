@@ -13,7 +13,7 @@ import os
 import sys
 from pathlib import Path
 
-from .engine import run
+from .engine import rescore, run
 from .models import DEFAULT_FILTER_STATUS, DEFAULT_MATCH_STATUS, FuzzConfig
 from .scope import Scope
 
@@ -64,6 +64,8 @@ def build_parser() -> argparse.ArgumentParser:
         "may be a file of hosts (one per line) or @file. Subdomains are included.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Plan candidates and write fuzz.json without sending requests.")
+    parser.add_argument("--rescore", action="store_true",
+                        help="Re-classify an existing reports/fuzz.json offline (no requests, no scope needed).")
     parser.add_argument("--offline", action="store_true", help="Use only bundled seed wordlists; never download.")
     parser.add_argument("--concurrency", type=int, default=20, help="Maximum concurrent requests (default: 20).")
     parser.add_argument("--delay", type=float, default=0.0, help="Seconds to sleep before each request (throttle).")
@@ -96,6 +98,14 @@ def main(argv: list[str] | None = None) -> int:
     if not reports_dir.is_dir():
         LOGGER.error("No reports directory at %s -- run the extractor first.", reports_dir)
         return 2
+    if args.rescore:
+        summary = rescore(reports_dir)
+        if summary is None:
+            LOGGER.info("No fuzz.json to rescore in %s", reports_dir)
+        else:
+            LOGGER.info("Rescored fuzz.json offline: %d request(s); %d interesting", summary.requested,
+                        summary.interesting)
+        return 0
 
     scope_args = _expand_scope_args(args.scope)
     # Join and re-parse so comma/space separators inside a single --scope value

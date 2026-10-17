@@ -28,6 +28,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
+from modules.proxyutil import chromium_launch
+
 try:
     from modules.webshot import find_chromium
 except Exception:  # pragma: no cover - webshot import is trivial
@@ -260,11 +262,21 @@ class CDPSession:
 
 
 def _launch_chromium(chromium: str, user_dir: Path, extra_args: list[str]) -> tuple[subprocess.Popen, int]:
-    """Start headless Chromium with remote debugging; return (proc, port)."""
+    """Start headless Chromium with remote debugging; return (proc, port).
+
+    Under proxychains Chromium aborts on the preload, so it is started without it and
+    pointed at the chain's proxy instead (``proxyutil.chromium_launch``); with no usable
+    proxy it is not started at all rather than allowed to connect directly.
+    """
+    launch = chromium_launch()
+    if launch is None:
+        raise RuntimeError("under proxychains with no usable proxy for Chromium; not launching")
+    env, proxy_args = launch
     cmd = [chromium, "--headless=new", "--no-sandbox", "--disable-gpu",
            "--remote-debugging-port=0", "--remote-allow-origins=*",
-           "--disable-dev-shm-usage", f"--user-data-dir={user_dir}", *extra_args, "about:blank"]
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+           "--disable-dev-shm-usage", f"--user-data-dir={user_dir}", *proxy_args, *extra_args,
+           "about:blank"]
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
     port_file = user_dir / "DevToolsActivePort"
     for _ in range(100):  # up to ~10s for the port file to appear
         if port_file.is_file():

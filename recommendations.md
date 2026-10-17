@@ -16,6 +16,29 @@ item ships it is *removed* from this file and recorded as a milestone in
 
 ---
 
+## 0. Follow-ups from the 2026-10-17 sweep upgrades
+
+- **Repair Next.js chunk URLs instead of only dropping them.** `drop_repeated_segments`
+  removes katana's `/static/chunks/static/chunks/…` artifacts. The real files live
+  under the bundle's public path (`/_next/static/chunks/…`, or `__webpack_require__.p`
+  read from the runtime chunk). Rebuilding them would recover those assets.
+- **Verify amass honours `HTTP(S)_PROXY`.** assetfinder and subfinder use Go's
+  `net/http` proxy environment. amass has its own resolvers and data sources, so
+  under proxychains it may still query directly. Check with a logging SOCKS proxy
+  (as in `tests/test_sweep_upgrades.py` history), or skip amass when
+  `JSINTEL_PROXY_URL` is set.
+- **Lab hostnames under Tor.** `*.vuln.lab` names resolve only through `/etc/hosts`.
+  Under proxychains with `proxy_dns` they go to Tor and fail. Loopback IPs work
+  because they are excluded by the managed `localnet`. Either document running lab
+  proxychains tests by IP, or add the lab names to a `localnet`-style exclusion.
+- **Pre-filter and `-P`.** In `full` mode a host with nothing on 80/443 is skipped,
+  even if a port scan would find a service elsewhere. `JSINTEL_SWEEP_PREFILTER=wildcard`
+  keeps those hosts. Measure on a sweep slice how many targets come back with
+  services on other ports, to decide the default for `-P` sweeps.
+- **`python3 -m modules.X` resolves against the current directory first.** Run from a
+  directory that has its own `modules/` package, the wrong code would load. Prefer
+  `python3 -P` (3.11+) or `cd "$BASE_DIR"` in the shell stages.
+
 ## 1. Correlation & triage (remaining)
 
 The unified per-host triage report (`reports/triage.{json,html,md}` with a risk

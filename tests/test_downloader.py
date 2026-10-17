@@ -55,6 +55,11 @@ class _Handler(BaseHTTPRequestHandler):
                     self.wfile.write(block)
             except Exception:
                 pass
+        elif self.path.startswith("/walled/"):  # WAF wall: every request is 403
+            self.server.walled_hits += 1
+            self.send_response(403)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
         else:
             self.send_response(404)
             self.end_headers()
@@ -64,6 +69,7 @@ class _Handler(BaseHTTPRequestHandler):
 def server():
     socketserver.TCPServer.allow_reuse_address = True
     srv = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _Handler)
+    srv.walled_hits = 0
     port = srv.server_address[1]
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -145,3 +151,60 @@ def test_download_stage_terminates_and_bounds_each_asset(tmp_path, server):
     # No partial files are left behind for aborted downloads.
     leftover = list((tmp_path / "out" / "assets").glob("*.part"))
     assert not leftover, f"leftover partial files: {leftover}"
+
+
+def _run_items(tmp_path: Path, items: list[dict], env_extra: dict | None = None) -> list[dict]:
+    out = tmp_path / "out"
+    (out / "assets").mkdir(parents=True, exist_ok=True)
+    manifest = out / "assets.json"
+    manifest.write_text(json.dumps(items))
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("download:\n  timeout: 4\n  retries: 0\n")
+    env = {"PATH": "/usr/bin:/bin", "OUTPUT_DIR": str(out), "CONFIG": str(cfg),
+           "THREADS": "1", "LOG_FILE": "/dev/null", **(env_extra or {})}
+    subprocess.run(["bash", str(DOWNLOADER), str(manifest)], env=env, timeout=60,
+                   check=True, capture_output=True)
+    return json.loads(manifest.read_text())
+
+
+def _walled(base: str, n: int) -> list[dict]:
+    return [{"url": f"{base}/walled/{i}.js", "type": "javascript"} for i in range(n)]
+
+
+def test_host_behind_a_403_wall_is_cut_off(tmp_path):
+    socketserver.TCPServer.allow_reuse_address = True
+    srv = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _Handler)
+    srv.walled_hits = 0
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        items = _run_items(tmp_path, _walled(base, 40) + [{"url": f"{base}/normal.js",
+                                                           "type": "javascript"}],
+                           {"JSINTEL_DOWNLOAD_BLOCK_AFTER": "5"})
+        # Single worker: exactly 5 requests reach the wall, the other 35 are skipped.
+        assert srv.walled_hits == 5
+        statuses = [i["status"] for i in items[:40]]
+        assert statuses.count("failed") == 5 and statuses.count("blocked") == 35
+        assert "not requested" in items[39]["error"]
+        assert items[40]["status"] == "blocked"     # same host: the breaker is per host
+    finally:
+        srv.shutdown()
+
+
+def test_breaker_resets_on_success_and_can_be_disabled(tmp_path):
+    socketserver.TCPServer.allow_reuse_address = True
+    srv = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _Handler)
+    srv.walled_hits = 0
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    ok = {"url": f"{base}/normal.js", "type": "javascript"}
+    try:
+        # 4 walls, a success, 4 walls: never 5 in a row, so nothing is blocked.
+        items = _run_items(tmp_path, _walled(base, 4) + [ok] + _walled(base, 4),
+                           {"JSINTEL_DOWNLOAD_BLOCK_AFTER": "5"})
+        assert "blocked" not in {i["status"] for i in items}
+        srv.walled_hits = 0
+        items = _run_items(tmp_path / "b", _walled(base, 30), {"JSINTEL_DOWNLOAD_BLOCK_AFTER": "0"})
+        assert srv.walled_hits == 30 and {i["status"] for i in items} == {"failed"}
+    finally:
+        srv.shutdown()

@@ -106,3 +106,24 @@ def test_page_analyzer_bounded_on_pathological_input():
         t = time.time()
         list(PageAnalyzer().analyze(a, blob))
         assert time.time() - t < 5, f"{label} took too long (possible ReDoS)"
+
+
+def test_csrf_finding_only_for_same_site_form_actions():
+    # 2026-10-09 sweep: a HubSpot api/forms action on community.dune.com was flagged.
+    html = """<html><body>
+    <form action="https://forms.hubspot.com/api/forms/c362" method="POST"><input name="email"></form>
+    <form action="//hubspotonwebflow.com/api/forms/x" method="POST"><input name="email"></form>
+    <form action="https://api.t.test/subscribe" method="POST"><input name="email"></form>
+    <form method="POST"><input name="q"></form>
+    </body></html>"""
+    out = [f.to_record() for f in PageAnalyzer().analyze(_page(), html)]
+    csrf = [r["value"] for r in out if r.get("finding_type") == "form_without_csrf_token"]
+    assert len(csrf) == 2
+    assert any("api.t.test/subscribe" in v for v in csrf)      # same site, other subdomain
+    assert any("(self)" in v for v in csrf)                    # no action = posts to itself
+    assert not any("hubspot" in v for v in csrf)
+    # the third-party forms are still inventoried, just not reported as CSRF
+    forms = [r["value"] for r in out if r.get("finding_type") == "html_form"]
+    assert len(forms) == 4
+    # Identical inner HTML must not make every form inherit the first form's action.
+    assert len({v.split("'")[1] for v in forms}) == 4
