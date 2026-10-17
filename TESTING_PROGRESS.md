@@ -1696,3 +1696,63 @@ at risk 168, 4 high findings, 8 endpoints).
   octets; two IPs sharing the last two octets get different scope keys).
 
 **Suite: 558 → 568 passed (+10).**
+
+---
+
+## False-positive reduction pass over the 2026-10-09 mass sweep (2026-10-15)
+
+Analysed the live `sweep_2026-10-09/` results (≈10.2k of 58.5k targets done) to find
+which detectors produce noise, traced each to its root cause, fixed it, and re-measured
+on the real sweep data (assets already on disk — no new traffic to any target).
+
+### Root causes found and fixed
+
+| Detector | Root cause | Fix |
+|---|---|---|
+| `taint_to_sink` | Taint map keyed by **name only**: in minified code `t=localStorage.getItem()` in one function tainted every unrelated `t`/`e`/`n` in the bundle | Lexical scope resolution (`ScopeResolver` in `ast_utils`): bindings keyed by declaring function, params shadow, closures still resolve. Sources matched on the trailing member pair (`window.location.hash` now caught; `location.href.length` no longer a source). Whole-URL sources (`location.href`, `document.URL`) into navigation/request sinks dropped; localStorage flows downgraded one level (second-order). |
+| `prototype_pollution` | Every `obj[key] = v` flagged (15k medium) | Only the deep-merge shape `a[k1][k2] = v` with both keys non-literal, inside a function with no `__proto__`/`constructor`/`prototype`/`hasOwnProperty` guard; severity low (candidate). |
+| `dangerous_eval` | `Function("return this")()` (webpack/core-js globalThis shim) reported **critical**; `math.eval()`/`redis.eval()` treated as global eval | Only global `eval`/`Function` (bare or `window.`) with a non-constant argument; severity high. `setTimeout("literal")` → low. |
+| `postmessage_missing_origin` | Handler passed by reference had no visible body → always flagged | Resolve named handlers in-file (skip if unresolvable); require the handler to read `event.data`; accept `event.origin` **or** `event.source` checks. |
+| `hardcoded_secret` (aws/keyword) | `aws[\w…]{0,25}([A-Za-z0-9/+]{40})` matched the **BIP39 word list** (`…LawsuitLayer…`), base64 font/wasm blobs and AWS-SDK identifiers (520 high) | Keyword-gated bodies must be standalone (no alnum glued either side) and non-degenerate (entropy ≥ 3). |
+| `hardcoded_secret` (open-ended prefix) | `EAA…{90,}`, `IGQ…{100,}`, `A{22}…` matched slices of base64 data (zkSync wasm, Flutter tables, base64 source) | Reject prefix/keyword tokens adjacent to `+`/`/`/`=` (blob continues) or containing a 6× repeated char. |
+| `hardcoded_secret` (severity) | Stripe `pk_`, Google OAuth client id, Braintree tokenization key (public by design) reported **high**; Firebase/Maps `AIza` keys high | Public ids → info; Google browser keys → low (only abusable if unrestricted). |
+| `high_entropy_secret` | Tailwind classes, template strings, asset paths, serialized arrays | Literal must have token shape (no spaces/brackets/`${`, not a path/URL/asset, has letters+digits). |
+| secrets regex fallback (source maps / pages) | `['"\`]([^'"\`]{4,})['"\`]` let a short literal's closing quote open a "string" → scanned code *between* literals | Proper per-quote literal regex (unrolled loop, linear, 10× faster on unterminated input). Placeholder URL creds (`user:password@localhost`, `example.com`, `${VAR}`) ignored. |
+| `reflected_param_candidate` | 83% pointed at third parties (`googletagmanager.com/gtag/js?id=` 2,283×) | Only same-site targets (relative or same registrable domain). |
+| `cloud_bucket_reference` | `bucket.s3.amazonaws.com/key` also reported bogus bucket `s3.amazonaws.com/key` (`\b` matches after the `.`) | Path-style hosts must start the hostname. |
+| fuzzer `interesting` | One up-front baseline per directory; a WAF/rate-limiter starting mid-scan (Cloudflare 403 ≈34 KB, size drifting with the path) or a catch-all redirect made every later probe "interesting" (164k bogus 403s) | Post-probe repeated-response suppression: per host, a shape (same redirect target with the word masked case-insensitively, or same status + size within ±5%) shared by ≥10 distinct words is demoted (`note: repeated-response`). Slash-append directory redirects exempt. |
+
+### Measured on the real sweep data
+
+---
+
+## MILESTONE — mitmproxy addon scope: substring → dotted-suffix (2026-10-17)
+
+**Bug.** `integrations/mitmproxy/jsintel_mitm.py:in_scope` used `s in host`, so
+`JSINTEL_SCOPE=example.com` streamed `notexample.com`, `xexample.com` and
+`example.com.attacker.net` into the listener. The listener's `--fuzz`/`--forms` stages
+treat captured hosts as active targets, so a look-alike third-party host could become
+an active target.
+
+**Fix.** `in_scope` now uses the pipeline's dotted-suffix rule
+(`modules.fuzzer.scope.Scope.allows`), reimplemented inline because the addon must
+stay importable without the repo on `sys.path`. A host matches if it equals a scope
+host or is a subdomain of one. Entries are normalized by the new `_scope_host`
+helper, which handles case, whitespace, `*.`/leading `.`, a trailing dot, a scheme,
+a path, userinfo and a port. A single-label entry (`localhost`) matches only itself
+and is never used as a suffix, so a stray `com` cannot admit a TLD. A non-empty scope
+whose entries all normalize to nothing matches **nothing**, so it fails closed. An
+empty scope still means "all", as documented.
+
+**Tests.** `tests/test_mitm_addon.py`: look-alike negatives (`notexample.com`,
+`example.com.attacker.net`, `example.comx`, `xexample.com`, `example.co`, the bare
+TLD), no implied parent, entry/host normalization, single-label behaviour, and fail
+closed. The addon README, the module docstring and the skill (`listener.md`,
+`known-gaps.md`) are updated to match.
+
+Also in this change: the LLM skill `skills/jsintel/` (SKILL.md plus 12 reference docs
+and `project-docs/` symlinks to every repo .md), so a model loading it starts with the
+whole project's architecture, rules and known gaps.
+
+**Suite: 662 → 665 passed (+3).** The two wall-clock ReDoS tests passed this run,
+at load average about 16.

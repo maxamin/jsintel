@@ -20,7 +20,7 @@ re-fetching, since the body is already in the flow.
 Config (environment variables):
     JSINTEL_LISTEN_URL    listener base URL          (default http://127.0.0.1:8799)
     JSINTEL_LISTEN_TOKEN  X-JSIntel-Token, if the listener requires auth
-    JSINTEL_SCOPE         comma/space hosts to stream (substring match); empty = all
+    JSINTEL_SCOPE         comma/space hosts to stream (host or subdomain of it); empty = all
 
 This module intentionally does NOT import mitmproxy, so its serialization helpers
 are unit-testable with plain Python; mitmproxy calls the hook methods by name.
@@ -85,12 +85,36 @@ def build_ws_capture(url: str, from_client: bool, content: bytes) -> dict:
             "opcode": opcode, "payload": payload}
 
 
+def _scope_host(entry: str) -> str:
+    """Reduce a scope entry ("https://*.Example.com:8443/x", ".example.com.") to a host."""
+    e = (entry or "").strip().lower()
+    e = e.split("://", 1)[-1].split("/", 1)[0].split("@")[-1]
+    if e.count(":") == 1:
+        e = e.split(":", 1)[0]
+    return e.lstrip("*.").rstrip(".")
+
+
 def in_scope(host: str, scope: list[str]) -> bool:
-    """True if host matches any scope entry (substring), or scope is empty (= all)."""
+    """True if host equals a scope host or is a subdomain of one; empty scope = all.
+
+    Dotted-suffix match, the same rule as ``modules.fuzzer.scope.Scope.allows``. The
+    old substring test let ``notexample.com`` and ``example.com.attacker.net`` through
+    for scope ``example.com``, and those hosts then reached the listener, whose
+    ``--fuzz``/``--forms`` stages treat captured hosts as active targets. A single-label
+    entry ("localhost") matches only itself, never as a suffix, so a stray "com" cannot
+    authorize a whole TLD. If scope was given but no entry survives normalization,
+    nothing matches (fail closed rather than falling back to "all").
+    """
     if not scope:
         return True
-    h = (host or "").lower()
-    return any(s.lower() in h for s in scope)
+    hosts = {_scope_host(s) for s in scope} - {""}
+    h = (host or "").strip().lower().rstrip(".")
+    if not h or not hosts:
+        return False
+    if h in hosts:
+        return True
+    labels = h.split(".")
+    return any(".".join(labels[i:]) in hosts for i in range(1, len(labels) - 1))
 
 
 def post_capture(endpoint: str, obj: dict, token: str | None, timeout: float = 15.0) -> bool:

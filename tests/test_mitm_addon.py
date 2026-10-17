@@ -34,8 +34,34 @@ def test_is_texty():
 
 def test_in_scope():
     assert mitm.in_scope("app.example.com", [])                    # empty scope = all
-    assert mitm.in_scope("api.example.com", ["example.com"])       # substring match
+    assert mitm.in_scope("api.example.com", ["example.com"])       # subdomain
+    assert mitm.in_scope("example.com", ["example.com"])           # exact
     assert not mitm.in_scope("evil.test", ["example.com"])
+
+
+def test_in_scope_rejects_lookalike_hosts():
+    # The old substring match admitted all of these for scope example.com.
+    for host in ("notexample.com", "example.com.attacker.net", "example.comx",
+                 "xexample.com", "example.co", "com"):
+        assert not mitm.in_scope(host, ["example.com"]), host
+    assert not mitm.in_scope("api.example.com", ["api.example.com.evil"])
+    assert not mitm.in_scope("example.com", ["api.example.com"])   # parent not implied
+
+
+def test_in_scope_normalizes_entries_and_host():
+    for entry in ("EXAMPLE.com", " example.com ", "*.example.com", ".example.com",
+                  "example.com.", "https://example.com/path", "example.com:8443",
+                  "http://user@example.com:80/"):
+        assert mitm.in_scope("App.Example.COM.", [entry]), entry
+    assert mitm.in_scope("shop.vuln.lab", ["foo.test", "vuln.lab"])  # any entry
+
+
+def test_in_scope_single_label_and_fail_closed():
+    assert mitm.in_scope("localhost", ["localhost"])
+    assert not mitm.in_scope("example.com", ["com"])     # a bare TLD is not a suffix
+    assert not mitm.in_scope("a.localhost", ["localhost"])
+    assert not mitm.in_scope("example.com", ["*.", "://"])  # scope set, nothing valid
+    assert not mitm.in_scope("", ["example.com"])
 
 
 def test_build_ws_capture():

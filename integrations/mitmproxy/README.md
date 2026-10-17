@@ -30,7 +30,7 @@ see decrypted bodies.
 |---|---|---|
 | `JSINTEL_LISTEN_URL` | `http://127.0.0.1:8799` | Listener base URL. |
 | `JSINTEL_LISTEN_TOKEN` | — | Sent as `X-JSIntel-Token` when the listener requires auth. |
-| `JSINTEL_SCOPE` | *(empty = all)* | Comma/space hosts to stream (substring match). **Set this** to avoid streaming third-party traffic. |
+| `JSINTEL_SCOPE` | *(empty = all)* | Comma/space hosts to stream: a host matches if it equals an entry or is a subdomain of one (`example.com` admits `api.example.com`, not `notexample.com`). **Set this** to avoid streaming third-party traffic. |
 
 ## What it sends
 
