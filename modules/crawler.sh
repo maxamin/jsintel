@@ -113,6 +113,19 @@ if [[ "$ANCHORED" == "0" && "${CRAWL_SCOPE:-}" != "off" ]]; then
 fi
 [[ -s "$SCOPE_DOMS" ]] && log_info "Crawl scope (registered domains): $(paste -sd' ' "$SCOPE_DOMS")"
 
+# Hand the scope to katana itself (-cs, its in-scope regex for links to follow).
+# Without it katana applies its own default, the seed's *registered* domain (-fs rdn),
+# and clean_and_scope below only filters what is kept, not what is requested. In the
+# 2026-10-09 sweep the authorized target 12thespis.files.wordpress.com made katana
+# crawl all of wordpress.com: 1,029,170 URLs on 4,736 other hosts until it was
+# OOM-killed, and every one of them was then discarded by the filter. The regex
+# admits a scope host and its subdomains (any port), the same rule as host_in_scope.
+KATANA_SCOPE=()
+if [[ -s "$SCOPE_DOMS" ]]; then
+  KATANA_SCOPE_ALT=$(sed -E 's/[][\\.^$*+?(){}|]/\\&/g; /:/s/.*/\\[&\\]/' "$SCOPE_DOMS" | paste -sd'|')
+  KATANA_SCOPE=(-cs "^[a-zA-Z][a-zA-Z0-9+.-]*://([^/?#@]*@)?([^/?#@]*\\.)?(${KATANA_SCOPE_ALT})(:[0-9]+)?([/?#]|\$)")
+fi
+
 # Clean katana output (unescape JS backslash-escapes, drop malformed URLs), keep
 # only asset-like URLs, and restrict to the crawl scope when one is set.
 clean_and_scope() {
@@ -156,7 +169,25 @@ if command -v katana >/dev/null 2>&1; then
   # Redirect stdin from /dev/null: with `-list <file>` katana still reads stdin and,
   # when stdin is an open pipe with no EOF (CI/cron/pipeline/non-interactive shells),
   # it blocks forever. Closing stdin keeps the crawl from hanging.
-  katana -list "$SEEDS" -d "$DEPTH" -jc -jsl -silent -c "$THREADS" ${KATANA_AUTH[@]+"${KATANA_AUTH[@]}"} </dev/null 2>>"$LOG_FILE" > "$RAWCRAWL" || true
+  # Hard address-space cap. katana's -jsl (jsluice) parses JS through tree-sitter,
+  # which allocates in C outside the Go GC (so GOMEMLIMIT cannot bound it). In the
+  # 2026-10-09 sweep katana grew to 12-34 GB RSS on some targets and was OOM-killed
+  # 485 times, starving every other process on the box. RLIMIT_AS bounds the C and
+  # the Go heap alike: past the cap katana aborts by itself, the URLs it already
+  # printed are kept, and the warning below makes the truncation visible.
+  # katana needs >1 GB of address space just to start, so values under 2048 are raised.
+  # JSINTEL_KATANA_MAX_VMEM_MB=0 disables the cap.
+  KATANA_VMEM_MB="${JSINTEL_KATANA_MAX_VMEM_MB:-8192}"
+  [[ "$KATANA_VMEM_MB" =~ ^[0-9]+$ ]] || KATANA_VMEM_MB=8192
+  (( KATANA_VMEM_MB == 0 || KATANA_VMEM_MB >= 2048 )) || KATANA_VMEM_MB=2048
+  KATANA_RC=0
+  (
+    (( KATANA_VMEM_MB > 0 )) && ulimit -v $(( KATANA_VMEM_MB * 1024 ))
+    exec katana -list "$SEEDS" -d "$DEPTH" -jc -jsl -silent -c "$THREADS" ${KATANA_SCOPE[@]+"${KATANA_SCOPE[@]}"} ${KATANA_AUTH[@]+"${KATANA_AUTH[@]}"}
+  ) </dev/null 2>>"$LOG_FILE" > "$RAWCRAWL" || KATANA_RC=$?
+  if (( KATANA_RC != 0 )); then
+    log_warn "katana exited with status $KATANA_RC (memory cap ${KATANA_VMEM_MB} MB; 0 = none); crawl results may be incomplete"
+  fi
   clean_and_scope < "$RAWCRAWL" > "$OUT" || true
   if [[ "$VERBOSE" == "1" ]]; then
     log_info "Crawler saw $(wc -l < "$RAWCRAWL" | tr -d ' ') total URLs before asset filtering"

@@ -11,6 +11,7 @@
 | 2026-09-30 | Downloader hard bounds (streaming endpoints wedged the pipeline). **Forms / AJAX-spider** stage + `--proxychains`. labs-index discovery target on a random port 80-10443. Port scan survives non-HTTP banners. `reg_dom` IP pass-through. |
 | 2026-10-09 → | Huge real mass sweep (`sweep_2026-10-09/`, about 10.2k of 58.5k targets done when analysed). A second sweep over `../YABFF/Merged_uniqued_subdomains_list.txt` was still running on 2026-10-15. |
 | 2026-10-15 | False-positive reduction pass on the sweep corpus: taint scoping, eval/prototype/postMessage precision, secret blob-slice rejection, public-key severities, same-site param candidates, cloud bucket host fix, fuzzer repeated-response suppression. Branch `fix/false-positive-reduction` had uncommitted work: a `credentials-in-url` escaped-JSON-LD fix + test, and backlog additions. |
+| 2026-10-17 | Sweep stopped at 13,784 of 58.5k targets. Output analysis found: katana never got the scope and crawled whole registered domains (one wordpress.com target hit 4,736 hosts); 485 katana OOM kills (12-34 GB), which silently truncated 474 "ok" targets; 44 targets lost to bash segfaults. Fixed with katana `-cs` scope, a `ulimit -v` cap, a crash-signal retry, and `JSINTEL_SWEEP_RESUME`. |
 
 ## Operator context (from shell history)
 - Kali/Debian box, root, full Kali toolset installed (nmap, ffuf, feroxbuster, amass,

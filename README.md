@@ -23,6 +23,8 @@ view.
 
 - **JavaScript-aware crawling** (Katana) for `.js`, `.mjs`, source maps, JSON,
   WebAssembly, workers, and manifests, with scope-anchored URL normalization.
+  katana runs under an address-space cap (`JSINTEL_KATANA_MAX_VMEM_MB`, default 8192;
+  0 disables) so one runaway crawl cannot OOM the box; an abnormal exit is logged.
 - **Subdomain enumeration** (`-s`) over an authorized scope, liveness-probed and
   added to the crawl as extra seeds.
 - **Web-service port scanning** (`-p`) that finds HTTP(S) services on
@@ -105,7 +107,7 @@ defaults to the `config/config.yaml` value (50).
 | `-p <scope>` | Port-scan in-scope hosts for web services on non-standard ports; writes `assets/services.txt` and `reports/ports.json`. Override ports with `JSINTEL_PORTS` (e.g. `"80,443,8000-8100"`). |
 | `-w` | Screenshot discovered services into a clustered gallery. Pairs with `-p`. |
 | `-f <scope>` | Enable content-discovery fuzzing against the authorized scope. Extra options via `JSINTEL_FUZZ_ARGS` (e.g. `--dry-run`, `--offline`). |
-| `-m <file>` | **Mass sweep**: run the full pipeline per target into `<output>/targets/<domain>/` and write an aggregate `sweep_summary.{json,md}`. Enable per-target stages with `-S/-P/-W/-F`. |
+| `-m <file>` | **Mass sweep**: run the full pipeline per target into `<output>/targets/<domain>/` and write an aggregate `sweep_summary.{json,md}`. Enable per-target stages with `-S/-P/-W/-F`. `JSINTEL_SWEEP_PARALLEL` (default 3) sets concurrency; `JSINTEL_SWEEP_RESUME=1` continues an interrupted sweep in the same output dir (skips targets already `ok`); a target whose stage crashes on a signal is retried once. |
 | `-v` | Verbose: surface tool output and warn about silent failures. |
 | `--cookie <value>` | Authenticated mode: send this `Cookie` header (e.g. `"PHPSESSID=…; security=low"`) with every request across all stages. |
 | `--jwt <token>` | Authenticated mode: send `Authorization: Bearer <token>` with every request. Combinable with `--cookie`. |

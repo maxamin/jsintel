@@ -15,6 +15,7 @@ A SCOPE value is a domain, a comma- or space-separated list, a file of domains, 
 | `JSINTEL_AUTH_COOKIE` / `JSINTEL_AUTH_BEARER` | – | Session sent by all stages (set by `--cookie`/`--jwt`) |
 | `CRAWL_SCOPE` | derived | Crawl scope override; `off` disables filtering (dangerous) |
 | `JSINTEL_DEPTH` | config `crawler.depth` (5) | katana depth |
+| `JSINTEL_KATANA_MAX_VMEM_MB` | 8192 | katana address-space cap (`ulimit -v`); 0 = none, values under 2048 are raised to 2048 |
 | `JSINTEL_CRAWL_PAGES` | 1 | 0 = classic JS-only crawl (no server-rendered pages) |
 | `JSINTEL_LOGOUT_RE` | `logout\|logoff\|signout\|...` | katana `-cos` exclude when authenticated |
 | `JSINTEL_MAP_DISCOVERY` | 1 | Add `<bundle>.map` candidates |
@@ -26,6 +27,7 @@ A SCOPE value is a domain, a comma- or space-separated list, a file of domains, 
 | `JSINTEL_FUZZ_ARGS` | – | e.g. `--dry-run`, `--offline --delay 0.1` |
 | `JSINTEL_FORMS_ARGS` | – | e.g. `--no-submit`, `--browser --settle 6`, `--deny term` |
 | `JSINTEL_SWEEP_PARALLEL` | 3 | Concurrent targets in `-m` |
+| `JSINTEL_SWEEP_RESUME` | 0 | 1 = skip targets already `ok` in the sweep output dir |
 | `JSINTEL_UNDER_PROXYCHAINS` | – | Internal re-exec guard |
 | `JSINTEL_LISTEN_TOKEN` | – | Listener shared-secret header |
 | `JSINTEL_LISTEN_URL`, `JSINTEL_SCOPE` | – | mitmproxy addon target and scope |

@@ -82,7 +82,10 @@ paths are skipped. State lives in `reports/.discovered.json`. The pipeline re-ru
 extraction only when a round adds something.
 
 ## Mass sweep (`-m file`, `modules/sweep.sh`)
-Per-target isolation, `JSINTEL_SWEEP_PARALLEL` (3), and stage toggles `-S/-P/-W/-F`. The
+Per-target isolation, `JSINTEL_SWEEP_PARALLEL` (3), and stage toggles `-S/-P/-W/-F`.
+`JSINTEL_SWEEP_RESUME=1` skips targets whose `.sweep_status` is `ok`. A crash-signal death
+(rc 134/135/137/139) is retried once, and the first log is kept as
+`sweep_target.attempt1.log`. rc 130/143 (operator stop) is never retried. The
 operator runs very large sweeps (58.5k targets, multi-day) from `screen`, sometimes under
 proxychains. **Never edit `sweep.sh`, `jsintel.sh`, or any `modules/*.sh` while
 `pgrep -f sweep.sh` shows a live sweep.** bash re-reads scripts while it runs them, so

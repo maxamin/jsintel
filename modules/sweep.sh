@@ -26,6 +26,10 @@ SWEEP_SUBS="${SWEEP_SUBS:-0}"; SWEEP_PORTS="${SWEEP_PORTS:-0}"; SWEEP_FUZZ="${SW
 SWEEP_THREADS="${SWEEP_THREADS:-}"; VERBOSE="${VERBOSE:-0}"
 PARALLEL="${JSINTEL_SWEEP_PARALLEL:-3}"
 [[ "$PARALLEL" =~ ^[1-9][0-9]*$ ]] || PARALLEL=3
+# JSINTEL_SWEEP_RESUME=1 skips targets whose .sweep_status is "ok", so an interrupted
+# sweep (the 2026-10-09 run stopped at ~13.8k of 58.5k targets) continues where it
+# left off in the same output dir instead of re-scanning finished targets.
+RESUME="${JSINTEL_SWEEP_RESUME:-0}"
 
 # --- Normalise the target list ------------------------------------------------
 # Accept bare domains or URLs; strip scheme/path/port; drop comments/blanks.
@@ -58,13 +62,32 @@ run_one() {
   [[ "$SWEEP_WEBSHOT" == "1" ]] && args+=(-w)
   [[ "$SWEEP_FUZZ" == "1" ]] && args+=(-f "$target")
   [[ "$VERBOSE" == "1" ]] && args+=(-v)
+  if [[ "$RESUME" == "1" && "$(cat "$tdir/.sweep_status" 2>/dev/null)" == "ok" ]]; then
+    log_info "[sweep] skip  $target (already ok; JSINTEL_SWEEP_RESUME=1)"
+    return 0
+  fi
   log_info "[sweep] start $target -> $tdir"
   # Each target is isolated: a failure in one must not abort the sweep.
-  if bash "$BASE_DIR/jsintel.sh" "${args[@]}" >"$tdir/sweep_target.log" 2>&1; then
+  # A stage killed by a crash signal (SIGSEGV/SIGBUS/SIGABRT/SIGKILL) is retried once:
+  # the 2026-10-09 sweep lost 44 targets to sporadic bash 5.3 segfaults (rc=139) in
+  # crawler.sh/portscan.sh with no kernel trace and no pattern by target. SIGINT and
+  # SIGTERM (rc 130/143) are the operator stopping the run and are never retried.
+  # The failed attempt's log is kept as sweep_target.attempt1.log.
+  local rc=0 attempt
+  for attempt in 1 2; do
+    rc=0
+    bash "$BASE_DIR/jsintel.sh" "${args[@]}" >"$tdir/sweep_target.log" 2>&1 || rc=$?
+    case "$rc" in
+      134|135|137|139) [[ "$attempt" == "1" ]] || break
+        mv -f "$tdir/sweep_target.log" "$tdir/sweep_target.attempt1.log"
+        log_warn "[sweep] retry $target (stage died with rc=$rc; retrying once)" ;;
+      *) break ;;
+    esac
+  done
+  if (( rc == 0 )); then
     log_info "[sweep] done  $target (ok)"
     printf 'ok\n' > "$tdir/.sweep_status"
   else
-    local rc=$?
     log_warn "[sweep] done  $target (FAILED rc=$rc; see $tdir/sweep_target.log)"
     printf 'failed rc=%s\n' "$rc" > "$tdir/.sweep_status"
   fi

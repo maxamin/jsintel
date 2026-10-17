@@ -36,6 +36,9 @@ Usage: ./jsintel.sh -i <input_urls> [-o <output_dir>] [-t <threads>] [-s <scope>
       then write an aggregate <output>/reports/sweep_summary.{json,md}. Each target is
       used as its own authorized scope. Enable per-target stages with the toggles
       below. Parallelism across targets: JSINTEL_SWEEP_PARALLEL (default 3).
+      JSINTEL_SWEEP_RESUME=1 skips targets already marked ok in the same output dir
+      (continue an interrupted sweep). A target whose stage dies from a crash signal
+      (rc 134/135/137/139) is retried once.
   -S  (mass mode) enable subdomain enumeration per target (like -s <target>).
   -P  (mass mode) enable web-service port scanning per target (like -p <target>).
   -W  (mass mode) enable web-service screenshots per target (like -w).

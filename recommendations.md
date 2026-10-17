@@ -111,7 +111,16 @@ shipped, along with ingesting services + screenshots into the DB. What remains:
 ## 7. Reliability & performance
 
 - **Resumable stages.** Skip already-downloaded assets / already-shot services on
-  re-run (checkpointing), so large sweeps recover from interruption.
+  re-run (checkpointing). Whole-target resume exists (`JSINTEL_SWEEP_RESUME=1`); this is
+  the finer, per-stage version inside one target.
+- **Upgrade bash on the sweep box (5.3-3+b1 → 5.3-4 is available).** The 2026-10-09
+  sweep lost 44 targets to sporadic bash segfaults (rc=139) inside `crawler.sh` (43,
+  right after katana returned) and `portscan.sh` (1), with no kernel trace and no
+  correlation with OOM kills. `sweep.sh` now retries those once. If they persist after
+  the upgrade, capture a core (`ulimit -c unlimited`, `coredumpctl`) and report upstream.
+- **katana memory with `-jsl`.** With the scope now passed (`-cs`), re-measure peak
+  katana RSS over a sweep slice. If it still nears the 8 GB cap, consider dropping
+  `-jsl` for very large sites or adding `-ct` (crawl duration).
 - **Structured run manifest.** One `run.json` capturing flags, scope, tool versions,
   timings per stage — useful for debugging and for annotating run-to-run diffs.
 

@@ -1756,3 +1756,72 @@ whole project's architecture, rules and known gaps.
 
 **Suite: 662 → 665 passed (+3).** The two wall-clock ReDoS tests passed this run,
 at load average about 16.
+
+---
+
+## MILESTONE — Sweep output analysis: katana scope, katana OOM, crashed targets (2026-10-17)
+
+Analysed `sweep_2026-10-09/` read-only (13,784 targets finished before the sweep
+stopped at `deafilosophy.files.wordpress.com`, about 23% of 58.5k), plus the kernel
+journal. No new traffic went to any target. All validation used loopback servers.
+
+### Bug 1: katana crawled outside the authorized scope (security)
+- **Symptom:** for target `12thespis.files.wordpress.com`, katana emitted 1,029,170 URLs
+  on **4,736 hosts** (`ahairlessape.wordpress.com` 173k, `gravatar.com`, `wordpress.com`,
+  …). The final `crawled_urls.txt` held 0 of them.
+- **Cause:** `crawler.sh` never passed the scope to katana. katana used its default
+  `-fs rdn` (the seed's registered domain), so a `*.files.wordpress.com` target crawled
+  all of wordpress.com. `clean_and_scope` only filters what is *kept*, not what is
+  *requested*.
+- **Fix:** `crawler.sh` builds `-cs` (katana's follow-scope regex) from `SCOPE_DOMS`:
+  a scope host or its subdomains, any port, userinfo tolerated, metacharacters
+  escaped, IPv6 bracketed. `CRAWL_SCOPE=off` keeps katana's default.
+- **Proof (real katana, loopback):** the seed `shop.vuln.lab:18765` links and fetches to
+  `smap.vuln.lab:18766` (same `vuln.lab`). Old crawler: **3 out-of-scope requests**.
+  New: **0**. The 4 in-scope URLs are unchanged.
+
+### Bug 2: katana OOM kills silently truncated "ok" targets
+- **Symptom:** 485 `Out of memory: Killed process (katana)` in the journal (avg 22 GB,
+  max 34 GB RSS on a 39 GB box). 474 target logs show `Killed katana`, and every one
+  was still marked `ok`. 396 of the 474 were `*.files.wordpress.com` (bug 1).
+- **Cause:** bug 1, amplified by `-jsl` (jsluice/tree-sitter allocates in C, outside
+  the Go GC). `katana … || true` hid the death.
+- **Fix:** katana runs in a subshell under `ulimit -v` (`JSINTEL_KATANA_MAX_VMEM_MB`,
+  default 8192, 0 = off, values under 2048 raised to 2048 because katana needs >1 GB to
+  start; measured: it aborts at 1 GB and runs at 2 GB). A non-zero exit is logged as
+  `katana exited with status N … crawl results may be incomplete`. URLs printed before
+  an abort are kept.
+
+### Bug 3: 44 targets lost to bash segfaults
+- **Symptom:** 44 `FAILED rc=139`. 43 were `Segmentation fault bash crawler.sh`, right
+  after katana returned (`crawled_urls.txt` already written), and 1 was in
+  `portscan.sh`. They were spread evenly over 8 days.
+- **Cause:** not determinable offline. No kernel `segfault at` line, and no
+  correlation with OOM kills (5/44 within 60 s, below the 9% random baseline). The
+  likeliest cause is the system bash (5.3-3+b1; 5.3-4 is available). This is noted in
+  `recommendations.md` §7.
+- **Fix (resilience):** `sweep.sh` retries a target once when the stage dies from a
+  crash signal (rc 134/135/137/139). It keeps the first log as
+  `sweep_target.attempt1.log` and never retries an operator stop (130/143) or an
+  ordinary failure.
+- **New:** `JSINTEL_SWEEP_RESUME=1` skips targets whose `.sweep_status` is `ok`. The
+  interrupted sweep can therefore continue in place and re-run its 44 failed targets.
+  It cannot re-crawl the 474 truncated ones, because those are marked `ok`. Reset them
+  first (list below).
+
+### Not bugs (checked)
+`errors.json` is empty in all 13,031 targets. The 467 "redirects off-scope — NOT
+following", 433 "No assets found" and 83 "Candidate cap reached" warnings are
+intended behaviour.
+
+**Tests:** `tests/test_crawl_resilience.py` (10). It runs `crawler.sh` and `sweep.sh`
+against fake `katana`/`jsintel.sh` and covers: the default, custom, disabled, clamped
+and invalid memory caps; an aborted katana keeping partial URLs and warning; a
+crash-once target retried to ok; a crash-always target retried exactly once;
+SIGTERM, rc=1 and ok targets not retried; resume skipping only `ok` targets; the `-cs`
+regex accepting the scope host, subdomains, ports and userinfo and rejecting the parent
+domain, sibling blogs, gravatar, look-alike prefixes and suffixes, and a scope host in
+the query string; metacharacter escaping; and `CRAWL_SCOPE=off`. All 7 cap and retry
+tests fail on the previous scripts.
+
+**Suite: 665 → 675 passed (+10).**
