@@ -36,6 +36,15 @@ shipped, along with ingesting services + screenshots into the DB. What remains:
 
 ## 3. Discovery
 
+- **Wildcard-DNS collapse in mass sweeps.** The 2026-10-09 sweep spent ~45 s each on
+  ~8,000 phantom hosts (`*.kwenta.eth.limo`, `*.waymont.co`, `*.app.spot.cash`,
+  `*.moonbeam.network`, `*.defly.app` — ~1,600 each) that only exist because the
+  parent zone has wildcard DNS. Before running a target, resolve a random label under
+  its parent (`<uuid>.<parent>`); if it resolves to the same address set (and, for
+  HTTP, the same landing-page fingerprint), run ONE representative and record the
+  rest as `wildcard` in `sweep_summary`. Do this in `sweep.sh` only between runs —
+  editing a bash script that a live sweep is executing corrupts it.
+
 - **More port-scan engines.** Support `naabu` natively (fast, hostname-aware) and
   `masscan` (resolve → scan IPs → fan out, reusing the CDN-aware mapping already
   built for nmap). Auto-pick by availability and target size.
@@ -51,6 +60,11 @@ shipped, along with ingesting services + screenshots into the DB. What remains:
 
 ## 4. Fuzzer
 
+- **WAF-wall early stop.** Repeated-response suppression now demotes a mid-scan WAF
+  challenge wall after the fact, but the scan still spends its whole budget against
+  it. Detect the wall live (N consecutive identical-shape responses after a clean
+  baseline) and pause/back off that host instead of sending the remaining candidates.
+
 - **Budget weighting.** Round-robin across hosts is in; add weighting by signal
   (hosts/directories with real 200s get a larger share than soft-404 SPAs).
 - **Recursive discovery.** Feed confirmed directories back as new fuzz contexts
@@ -62,6 +76,18 @@ shipped, along with ingesting services + screenshots into the DB. What remains:
   the surrounding static prefix).
 
 ## 5. Extraction & analysis
+
+- **Inter-procedural taint.** Taint is now lexically scoped (no cross-function name
+  conflation) but stops at call boundaries: `h(location.hash)` → `function h(x){el.innerHTML=x}`
+  is missed. Propagate taint through same-file function parameters (one level).
+- **Source-map secret attribution.** Secrets recovered from `node_modules/` sources
+  in a `.map` are vendor library code, not the target's config. Tag the finding with
+  `first_party: false` (path under `node_modules/`) so triage can rank them below
+  first-party sources instead of dropping them.
+- **Google API key restriction check (opt-in, active).** Client keys are now `low`;
+  an opt-in check could call a harmless metadata endpoint with the key to tell an
+  unrestricted key (real finding) from a referrer-restricted one (no finding). Only
+  against the operator's own authorized scope.
 
 - **More analyzers.** Cloud-bucket references (S3/GCS/Azure URLs in JS) and other
   static signals. *(Shipped: live-service security-header, GraphQL-introspection,

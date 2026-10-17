@@ -602,3 +602,11 @@ class TestSecretFalsePositiveRegressions:
         start = time.perf_counter()
         list(SecretsAnalyzer().analyze(make_asset(asset_type="source_map"), blob))
         assert time.perf_counter() - start < 10.0
+
+    def test_escaped_json_ld_is_not_url_credentials(self):
+        # bifrost.finance: schema.org JSON-LD embedded as an escaped string.
+        page = r'{"@type":"Organization","url":"https://bifrost.io\",\"logo\":{\"@type\":\"ImageObject\"}"}'
+        findings = list(SecretsAnalyzer().analyze(make_asset(asset_type="page"), page))
+        assert not any(f.value.startswith("credentials-in-url") for f in findings)
+        findings = analyze(SecretsAnalyzer(), "var s = " + repr(page) + ";")
+        assert not any(f.value.startswith("credentials-in-url") for f in findings)

@@ -105,7 +105,10 @@ def _load_patterns() -> list[tuple[re.Pattern[str], str, str, int]]:
 # makes the match O(n^2) on a large colon-free blob (a minified bundle), a
 # denial-of-service risk. Real URL schemes are short, so 15 chars is ample.
 _SECRET_PATTERNS: list[tuple[re.Pattern[str], str, str, int]] = _load_patterns() + [
-    (re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]{0,14}://[^:@/\s]+:[^:@/\s]+@[^\s/]+"),
+    # Userinfo/host exclude quotes, backslashes, braces, angle brackets and commas
+    # (never unencoded in RFC 3986 userinfo); otherwise ``"url":"https://a.io\",\"logo\":{\"@type``
+    # in escaped JSON-LD parses as user ``a.io\",\"logo\"``, password ``{\"``.
+    (re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]{0,14}://[^:@/\s\"'\\{}<>,]+:[^:@/\s\"'\\{}<>,]+@[^\s/\"'\\<>,]+"),
      "credentials-in-url", "medium", 0),
 ]
 
